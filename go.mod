@@ -9,7 +9,6 @@ require (
 	github.com/klauspost/compress v1.18.1
 	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/stretchr/testify v1.11.1
-	github.com/tidwall/btree v1.8.1
 	github.com/trapcodeio/go-strip-json-comments v1.0.11
 	github.com/valyala/fasthttp v1.68.0
 	gopkg.in/yaml.v3 v3.0.1
