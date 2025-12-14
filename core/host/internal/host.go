@@ -55,16 +55,26 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	defer wg.Done()
 
 	if ss.app == nil {
-		ss.app = injection.GetRoutine[host.IHostApplication](ss.provider).(*HostApplication)
+		appInstance := injection.GetRoutine[host.IHostApplication](ss.provider)
+		if appInstance == nil {
+			panic("IHostApplication not found in provider")
+		}
+		var ok bool
+		ss.app, ok = appInstance.(*HostApplication)
+		if !ok {
+			panic("IHostApplication is not *HostApplication")
+		}
 	}
 
 	defer func() {
-		select {
-		case <-ctx.Done():
-			ss.app.EmitRoutineStartedFailed()
-			return
-		default:
-			ss.app.EmitRoutineStartedSuccess()
+		if ss.app != nil {
+			select {
+			case <-ctx.Done():
+				ss.app.EmitRoutineStartedFailed()
+				return
+			default:
+				ss.app.EmitRoutineStartedSuccess()
+			}
 		}
 	}()
 
@@ -87,15 +97,23 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						ss.logger.Errorf("panic in BeforeStart: %v", err)
+						if ss.logger != nil {
+							ss.logger.Errorf("panic in BeforeStart: %v", err)
+						}
 					}
 					routineWg.Done()
 				}()
 				routine.BeforeStart(ctx, routineWg)
 			}()
 		}
-		if !routineWg.WaitTimeout(time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second) {
-			ss.logger.Warnf("'BeforeStart' wait timeout in hosted lifecycle routines")
+		timeout := 5 * time.Second
+		if ss.option != nil {
+			timeout = time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second
+		}
+		if !routineWg.WaitTimeout(timeout) {
+			if ss.logger != nil {
+				ss.logger.Warnf("'BeforeStart' wait timeout in hosted lifecycle routines")
+			}
 		}
 	}
 
@@ -114,7 +132,9 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 				go func() {
 					defer func() {
 						if err := recover(); err != nil {
-							ss.logger.Errorf("panic in lifecycle routine Start: %v", err)
+							if ss.logger != nil {
+								ss.logger.Errorf("panic in lifecycle routine Start: %v", err)
+							}
 						}
 						routineWg.Done()
 					}()
@@ -130,7 +150,9 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 				go func() {
 					defer func() {
 						if err := recover(); err != nil {
-							ss.logger.Errorf("panic in routine Start: %v", err)
+							if ss.logger != nil {
+								ss.logger.Errorf("panic in routine Start: %v", err)
+							}
 						}
 						routineWg.Done()
 					}()
@@ -138,8 +160,14 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 				}()
 			}
 		}
-		if !routineWg.WaitTimeout(time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second) {
-			ss.logger.Warnf("'Start' wait timeout in hosted routines")
+		timeout := 5 * time.Second
+		if ss.option != nil {
+			timeout = time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second
+		}
+		if !routineWg.WaitTimeout(timeout) {
+			if ss.logger != nil {
+				ss.logger.Warnf("'Start' wait timeout in hosted routines")
+			}
 		}
 	}
 
@@ -157,7 +185,9 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						ss.logger.Errorf("panic in AfterStart: %v", err)
+						if ss.logger != nil {
+							ss.logger.Errorf("panic in AfterStart: %v", err)
+						}
 					}
 					routineWg.Done()
 				}()
@@ -165,8 +195,14 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			}()
 		}
 
-		if !routineWg.WaitTimeout(time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second) {
-			ss.logger.Warnf("'AfterStart' wait timeout in hosted lifecycle routines")
+		timeout := 5 * time.Second
+		if ss.option != nil {
+			timeout = time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second
+		}
+		if !routineWg.WaitTimeout(timeout) {
+			if ss.logger != nil {
+				ss.logger.Warnf("'AfterStart' wait timeout in hosted lifecycle routines")
+			}
 		}
 	}
 }
@@ -183,15 +219,23 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						ss.logger.Errorf("panic in BeforeStop: %v", err)
+						if ss.logger != nil {
+							ss.logger.Errorf("panic in BeforeStop: %v", err)
+						}
 					}
 					routineWg.Done()
 				}()
 				routine.BeforeStop(ctx, routineWg)
 			}()
 		}
-		if !routineWg.WaitTimeout(time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second) {
-			ss.logger.Warnf("'BeforeStop' wait timeout in hosted lifecycle routines")
+		timeout := 8 * time.Second
+		if ss.option != nil {
+			timeout = time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second
+		}
+		if !routineWg.WaitTimeout(timeout) {
+			if ss.logger != nil {
+				ss.logger.Warnf("'BeforeStop' wait timeout in hosted lifecycle routines")
+			}
 		}
 	}
 
@@ -204,7 +248,9 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 				go func() {
 					defer func() {
 						if err := recover(); err != nil {
-							ss.logger.Errorf("panic in lifecycle routine Stop: %v", err)
+							if ss.logger != nil {
+								ss.logger.Errorf("panic in lifecycle routine Stop: %v", err)
+							}
 						}
 						routineWg.Done()
 					}()
@@ -219,7 +265,9 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 				go func() {
 					defer func() {
 						if err := recover(); err != nil {
-							ss.logger.Errorf("panic in routine Stop: %v", err)
+							if ss.logger != nil {
+								ss.logger.Errorf("panic in routine Stop: %v", err)
+							}
 						}
 						routineWg.Done()
 					}()
@@ -227,8 +275,14 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 				}()
 			}
 		}
-		if !routineWg.WaitTimeout(time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second) {
-			ss.logger.Warnf("'Stop' wait timeout in hosted routines")
+		timeout := 8 * time.Second
+		if ss.option != nil {
+			timeout = time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second
+		}
+		if !routineWg.WaitTimeout(timeout) {
+			if ss.logger != nil {
+				ss.logger.Warnf("'Stop' wait timeout in hosted routines")
+			}
 		}
 	}
 
@@ -240,15 +294,23 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						ss.logger.Errorf("panic in AfterStop: %v", err)
+						if ss.logger != nil {
+							ss.logger.Errorf("panic in AfterStop: %v", err)
+						}
 					}
 					routineWg.Done()
 				}()
 				routine.AfterStop(ctx, routineWg)
 			}()
 		}
-		if !routineWg.WaitTimeout(time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second) {
-			ss.logger.Warnf("'AfterStop' wait timeout in hosted lifecycle routines")
+		timeout := 8 * time.Second
+		if ss.option != nil {
+			timeout = time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second
+		}
+		if !routineWg.WaitTimeout(timeout) {
+			if ss.logger != nil {
+				ss.logger.Warnf("'AfterStop' wait timeout in hosted lifecycle routines")
+			}
 		}
 	}
 

@@ -3,14 +3,15 @@ package internal
 import (
 	"context"
 	"fmt"
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/logging"
-	sync2 "github.com/mogud/snow/core/sync"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"unsafe"
+
+	"github.com/mogud/snow/core/host"
+	"github.com/mogud/snow/core/logging"
+	sync2 "github.com/mogud/snow/core/sync"
 )
 
 var _ host.IHostedRoutine = (*ConsoleLifetimeRoutine)(nil)
@@ -44,13 +45,19 @@ func (ss *ConsoleLifetimeRoutine) Start(_ context.Context, wg *sync2.TimeoutWait
 
 		select {
 		case <-sigs:
-			ss.logger.Infof("SHUTDOWN APPLICATION BY SIGNAL...")
+			if ss.logger != nil {
+				ss.logger.Infof("SHUTDOWN APPLICATION BY SIGNAL...")
+			}
 		case <-ss.ctx.Done():
-			ss.logger.Infof("SHUTDOWN APPLICATION")
+			if ss.logger != nil {
+				ss.logger.Infof("SHUTDOWN APPLICATION")
+			}
 		}
 		ss.wg.Done()
 
-		ss.application.StopApplication()
+		if ss.application != nil {
+			ss.application.StopApplication()
+		}
 	}()
 }
 
