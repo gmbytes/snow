@@ -7,55 +7,54 @@ import (
 	"time"
 )
 
-type ctDescUnit struct {
+type timeRange struct {
 	begin int
 	end   int
 	step  int // 0: only begin value
-
 }
 
-type CTDesc struct {
-	year             []*ctDescUnit
-	month            []*ctDescUnit
-	day              []*ctDescUnit
-	week             []*ctDescUnit
-	hour             []*ctDescUnit
-	minute           []*ctDescUnit
-	second           []*ctDescUnit
+type CronExpression struct {
+	year             []*timeRange
+	month            []*timeRange
+	day              []*timeRange
+	week             []*timeRange
+	hour             []*timeRange
+	minute           []*timeRange
+	second           []*timeRange
 	layoutRegexp     map[string]*regexp.Regexp
 	layoutRegexpLock sync.Mutex
 }
 
-func (ss *CTDesc) init() {
-	if ss.year == nil {
-		ss.year = []*ctDescUnit{{begin: 0, end: math.MaxInt32, step: 1}}
+func (c *CronExpression) Init() {
+	if c.year == nil {
+		c.year = []*timeRange{{begin: 0, end: math.MaxInt32, step: 1}}
 	}
-	if ss.month == nil {
-		ss.month = []*ctDescUnit{{begin: 1, end: 12, step: 1}}
+	if c.month == nil {
+		c.month = []*timeRange{{begin: 1, end: 12, step: 1}}
 	}
-	if ss.day == nil {
-		ss.day = []*ctDescUnit{{begin: 1, end: 31, step: 1}}
+	if c.day == nil {
+		c.day = []*timeRange{{begin: 1, end: 31, step: 1}}
 	}
-	if ss.week == nil {
-		ss.week = []*ctDescUnit{{begin: 0, end: 6, step: 1}}
+	if c.week == nil {
+		c.week = []*timeRange{{begin: 0, end: 6, step: 1}}
 	}
-	if ss.hour == nil {
-		ss.hour = []*ctDescUnit{{begin: 0, end: 24, step: 1}}
+	if c.hour == nil {
+		c.hour = []*timeRange{{begin: 0, end: 23, step: 1}}
 	}
-	if ss.minute == nil {
-		ss.minute = []*ctDescUnit{{begin: 0, end: 59, step: 1}}
+	if c.minute == nil {
+		c.minute = []*timeRange{{begin: 0, end: 59, step: 1}}
 	}
-	if ss.second == nil {
-		ss.second = []*ctDescUnit{{begin: 0, end: 59, step: 1}}
+	if c.second == nil {
+		c.second = []*timeRange{{begin: 0, end: 59, step: 1}}
 	}
 
-	ss.layoutRegexp = make(map[string]*regexp.Regexp)
+	c.layoutRegexp = make(map[string]*regexp.Regexp)
 }
 
-func (ss *CTDesc) normUnit(params []*ctDescUnit, val int) (carry bool, newVal int) {
-	for _, v := range params {
-		b, e, s := v.begin, v.end, v.step
-		if v.step == 0 {
+func (c *CronExpression) normalizeUnit(ranges []*timeRange, val int) (carry bool, newVal int) {
+	for _, r := range ranges {
+		b, e, s := r.begin, r.end, r.step
+		if r.step == 0 {
 			if val <= b {
 				return false, b
 			}
@@ -80,99 +79,99 @@ func (ss *CTDesc) normUnit(params []*ctDescUnit, val int) (carry bool, newVal in
 
 		return false, nv
 	}
-	return true, params[0].begin
+	return true, ranges[0].begin
 }
 
-func (ss *CTDesc) Norm(t time.Time) time.Time {
+func (c *CronExpression) Normalize(t time.Time) time.Time {
 	year, _, day := t.Date()
 	month := int(t.Month())
 	hour, minute, second := t.Clock()
 
-	var c bool
-	var ov int
+	var carry bool
+	var oldVal int
 
-	ov = year
+	oldVal = year
 YEAR:
-	c, year = ss.normUnit(ss.year, year)
-	if c { // year cannot have carry
+	carry, year = c.normalizeUnit(c.year, year)
+	if carry { // year cannot have carry
 		return time.Time{}
 	}
-	if ov != year {
+	if oldVal != year {
 		month, day, hour, minute, second = 1, 1, 0, 0, 0
 	}
 
-	ov = month
+	oldVal = month
 MONTH:
-	c, month = ss.normUnit(ss.month, month)
-	if c {
-		ov = year
+	carry, month = c.normalizeUnit(c.month, month)
+	if carry {
+		oldVal = year
 		year++
 		goto YEAR
-	} else if ov != month {
+	} else if oldVal != month {
 		day, hour, minute, second = 1, 0, 0, 0
 	}
 
-	ov = day
+	oldVal = day
 DAY:
-	c, day = ss.normUnit(ss.day, day)
-	if c || time.Date(year, time.Month(month), day, 0, 0, 0, 0, t.Location()).Day() != day {
-		ov = month
+	carry, day = c.normalizeUnit(c.day, day)
+	if carry || time.Date(year, time.Month(month), day, 0, 0, 0, 0, t.Location()).Day() != day {
+		oldVal = month
 		month++
 		goto MONTH
-	} else if ov != day {
+	} else if oldVal != day {
 		hour, minute, second = 0, 0, 0
 	}
 
 	week := int(time.Date(year, time.Month(month), day, 0, 0, 0, 0, t.Location()).Weekday())
-	ov = week
-	c, week = ss.normUnit(ss.week, week)
-	if c {
-		nt := time.Date(year, time.Month(month), day+week-ov+7, 0, 0, 0, 0, t.Location())
+	oldVal = week
+	carry, week = c.normalizeUnit(c.week, week)
+	if carry {
+		nt := time.Date(year, time.Month(month), day+week-oldVal+7, 0, 0, 0, 0, t.Location())
 		day = nt.Day()
 		if int(nt.Month()) != month {
-			ov = month
+			oldVal = month
 			month++
 			goto MONTH
 		}
 		hour, minute, second = 0, 0, 0
-	} else if ov != week {
-		nt := time.Date(year, time.Month(month), day+week-ov, 0, 0, 0, 0, t.Location())
+	} else if oldVal != week {
+		nt := time.Date(year, time.Month(month), day+week-oldVal, 0, 0, 0, 0, t.Location())
 		day = nt.Day()
 		if int(nt.Month()) != month {
-			ov = month
+			oldVal = month
 			month++
 			goto MONTH
 		}
 		hour, minute, second = 0, 0, 0
 	}
 
-	ov = hour
+	oldVal = hour
 HOUR:
-	c, hour = ss.normUnit(ss.hour, hour)
-	if c {
-		ov = day
+	carry, hour = c.normalizeUnit(c.hour, hour)
+	if carry {
+		oldVal = day
 		day++
 		goto DAY
-	} else if ov != hour {
+	} else if oldVal != hour {
 		minute, second = 0, 0
 	}
 
-	ov = minute
+	oldVal = minute
 MINUTE:
-	c, minute = ss.normUnit(ss.minute, minute)
-	if c {
-		ov = hour
+	carry, minute = c.normalizeUnit(c.minute, minute)
+	if carry {
+		oldVal = hour
 		hour++
 		goto HOUR
-	} else if ov != minute {
+	} else if oldVal != minute {
 		second = 0
 	}
 
-	ov = second
+	oldVal = second
 
-	c, second = ss.normUnit(ss.second, second)
-	if c {
-		ov = minute
+	carry, second = c.normalizeUnit(c.second, second)
+	if carry {
+		oldVal = minute
 		minute++
 		goto MINUTE
 	}
