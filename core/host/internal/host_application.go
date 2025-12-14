@@ -36,8 +36,7 @@ func (ss *HostApplication) EmitRoutineStartedSuccess() {
 	for _, listener := range ss.startedListeners {
 		listener()
 	}
-
-	ss.StopApplication()
+	// 注意：启动成功不应该调用 StopApplication()，停止应该由外部信号或其他机制触发
 }
 
 func (ss *HostApplication) EmitRoutineStartedFailed() {
