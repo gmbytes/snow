@@ -1,8 +1,9 @@
 package slog
 
 import (
-	"github.com/mogud/snow/core/logging"
 	"sync/atomic"
+
+	"github.com/mogud/snow/core/logging"
 )
 
 var globalLogger atomic.Pointer[logging.ILogger]
@@ -26,29 +27,48 @@ func BindGlobalLogger(l logging.ILogger) {
 }
 
 func getLogger() logging.ILogger {
-	return *globalLogger.Load()
+	logger := globalLogger.Load()
+	if logger == nil {
+		// 返回默认 logger，避免 nil pointer
+		defaultLogger := logging.ILogger(logging.NewDefaultLogger("Global", logging.NewSimpleLogHandler(), nil))
+		globalLogger.Store(&defaultLogger)
+		return defaultLogger
+	}
+	return *logger
 }
 
 func Tracef(format string, args ...any) {
-	getLogger().Tracef(format, args...)
+	if logger := getLogger(); logger != nil {
+		logger.Tracef(format, args...)
+	}
 }
 
 func Debugf(format string, args ...any) {
-	getLogger().Debugf(format, args...)
+	if logger := getLogger(); logger != nil {
+		logger.Debugf(format, args...)
+	}
 }
 
 func Infof(format string, args ...any) {
-	getLogger().Infof(format, args...)
+	if logger := getLogger(); logger != nil {
+		logger.Infof(format, args...)
+	}
 }
 
 func Warnf(format string, args ...any) {
-	getLogger().Warnf(format, args...)
+	if logger := getLogger(); logger != nil {
+		logger.Warnf(format, args...)
+	}
 }
 
 func Errorf(format string, args ...any) {
-	getLogger().Errorf(format, args...)
+	if logger := getLogger(); logger != nil {
+		logger.Errorf(format, args...)
+	}
 }
 
 func Fatalf(format string, args ...any) {
-	getLogger().Fatalf(format, args...)
+	if logger := getLogger(); logger != nil {
+		logger.Fatalf(format, args...)
+	}
 }

@@ -2,9 +2,6 @@ package file
 
 import (
 	"fmt"
-	"github.com/mogud/snow/core/logging"
-	"github.com/mogud/snow/core/maps"
-	"github.com/mogud/snow/core/option"
 	"os"
 	"path"
 	"runtime"
@@ -12,6 +9,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mogud/snow/core/logging"
+	"github.com/mogud/snow/core/maps"
+	"github.com/mogud/snow/core/option"
 )
 
 var _ logging.ILogHandler = (*Handler)(nil)
@@ -142,6 +143,10 @@ func (ss *Handler) Log(logData *logging.LogData) {
 	logCh := ss.logChan
 	ss.lock.Unlock()
 
+	if curOption == nil || logCh == nil {
+		return
+	}
+
 	filterLevel := curOption.DefaultLevel
 	for _, key := range filterKeys {
 		if strings.HasPrefix(logData.Path, key) {
@@ -172,9 +177,15 @@ func (ss *Handler) Log(logData *logging.LogData) {
 		}
 	}
 
+	if formatter == nil {
+		formatter = logging.DefaultLogFormatter
+	}
 	message := formatter(logData)
 
 	fileName := ss.refreshFileName(logData.Time)
+	if len(fileName) == 0 {
+		return
+	}
 
 	unit := &writerElement{
 		File:    fileName,
@@ -190,6 +201,10 @@ func (ss *Handler) Log(logData *logging.LogData) {
 func (ss *Handler) refreshFileName(now time.Time) string {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
+
+	if ss.option == nil {
+		return ""
+	}
 
 	if len(ss.fileName) == 0 || now.Sub(ss.lastFileNameRefreshTime) > 10*time.Second {
 		ss.lastFileNameRefreshTime = now

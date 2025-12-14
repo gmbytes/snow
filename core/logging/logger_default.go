@@ -38,7 +38,9 @@ func (ss *DefaultLogger) log(level Level, format string, args ...any) {
 	if ss.logDataBuilder != nil {
 		ss.logDataBuilder(logData)
 	}
-	ss.handler.Log(logData)
+	if ss.handler != nil {
+		ss.handler.Log(logData)
+	}
 }
 
 func (ss *DefaultLogger) Tracef(format string, args ...any) {

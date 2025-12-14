@@ -2,14 +2,15 @@ package console
 
 import (
 	"fmt"
-	"github.com/mogud/snow/core/logging"
-	"github.com/mogud/snow/core/maps"
-	"github.com/mogud/snow/core/option"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/mogud/snow/core/logging"
+	"github.com/mogud/snow/core/maps"
+	"github.com/mogud/snow/core/option"
 )
 
 var _ logging.ILogHandler = (*Handler)(nil)
@@ -87,6 +88,10 @@ func (ss *Handler) Log(logData *logging.LogData) {
 	formatter := ss.formatter
 	ss.lock.Unlock()
 
+	if curOption == nil {
+		return
+	}
+
 	filterLevel := curOption.DefaultLevel
 	for _, key := range filterKeys {
 		if strings.HasPrefix(logData.Path, key) {
@@ -117,6 +122,9 @@ func (ss *Handler) Log(logData *logging.LogData) {
 		}
 	}
 
+	if formatter == nil {
+		formatter = logging.ColorLogFormatter
+	}
 	message := formatter(logData)
 
 	if logData.Level < curOption.ErrorLevel {

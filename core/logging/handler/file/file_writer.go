@@ -3,12 +3,13 @@ package file
 import (
 	"bytes"
 	"fmt"
-	"github.com/klauspost/compress/zstd"
-	"github.com/mogud/snow/core/task"
 	"io"
 	"log"
 	"os"
 	"path"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/mogud/snow/core/task"
 )
 
 type writerElement struct {
@@ -37,7 +38,7 @@ func (ss *writer) loop(c <-chan *writerElement) {
 			break
 		}
 
-		if ss.fileName == unit.File {
+		if ss.fileName == unit.File && ss.file != nil {
 			_, _ = fmt.Fprintln(ss.file, unit.Message)
 			continue
 		}

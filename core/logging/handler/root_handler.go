@@ -1,9 +1,10 @@
 package handler
 
 import (
-	"github.com/mogud/snow/core/logging"
 	"reflect"
 	"unsafe"
+
+	"github.com/mogud/snow/core/logging"
 )
 
 var _ logging.ILogHandler = (*RootHandler)(nil)
@@ -19,7 +20,9 @@ func NewRootHandler(proxy logging.ILogHandler) *RootHandler {
 }
 
 func (ss *RootHandler) Log(data *logging.LogData) {
-	ss.proxy.Log(data)
+	if ss.proxy != nil {
+		ss.proxy.Log(data)
+	}
 }
 
 func (ss *RootHandler) WrapToContainer(ty reflect.Type) any {
