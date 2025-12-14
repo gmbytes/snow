@@ -9,15 +9,36 @@ import (
 )
 
 var (
-	layoutWildcard            = `^\*$|^\?$`
-	layoutValue               = `^(%value%)$`
-	layoutRange               = `^(%value%)-(%value%)$`
-	layoutWildcardAndInterval = `^\*/(\d+)$`
-	layoutValueAndInterval    = `^(%value%)/(\d+)$`
-	layoutRangeAndInterval    = `^(%value%)-(%value%)/(\d+)$`
-	fieldFinder               = regexp.MustCompile(`\S+`)
-	entryFinder               = regexp.MustCompile(`[^,]+`)
+	fieldFinder = regexp.MustCompile(`\S+`)
+	entryFinder = regexp.MustCompile(`[^,]+`)
 )
+
+// 月份名称映射
+var monthNames = map[string]int{
+	"jan": 1, "january": 1,
+	"feb": 2, "february": 2,
+	"mar": 3, "march": 3,
+	"apr": 4, "april": 4,
+	"may": 5,
+	"jun": 6, "june": 6,
+	"jul": 7, "july": 7,
+	"aug": 8, "august": 8,
+	"sep": 9, "september": 9,
+	"oct": 10, "october": 10,
+	"nov": 11, "november": 11,
+	"dec": 12, "december": 12,
+}
+
+// 星期名称映射
+var weekNames = map[string]int{
+	"sun": 0, "sunday": 0,
+	"mon": 1, "monday": 1,
+	"tue": 2, "tuesday": 2,
+	"wed": 3, "wednesday": 3,
+	"thu": 4, "thursday": 4,
+	"fri": 5, "friday": 5,
+	"sat": 6, "saturday": 6,
+}
 
 type descriptorName string
 
@@ -32,54 +53,46 @@ const (
 )
 
 type fieldDescriptor struct {
-	name         descriptorName
-	min          int
-	max          int
-	valuePattern string
+	name descriptorName
+	min  int
+	max  int
 }
 
 var (
 	secondDescriptor = fieldDescriptor{
-		name:         _descriptorSecond,
-		min:          0,
-		max:          59,
-		valuePattern: `0?[0-9]|[1-5][0-9]`,
+		name: _descriptorSecond,
+		min:  0,
+		max:  59,
 	}
 	minuteDescriptor = fieldDescriptor{
-		name:         _minuteDescriptor,
-		min:          0,
-		max:          59,
-		valuePattern: `0?[0-9]|[1-5][0-9]`,
+		name: _minuteDescriptor,
+		min:  0,
+		max:  59,
 	}
 	hourDescriptor = fieldDescriptor{
-		name:         _hourDescriptor,
-		min:          0,
-		max:          23,
-		valuePattern: `0?[0-9]|1[0-9]|2[0-3]`,
+		name: _hourDescriptor,
+		min:  0,
+		max:  23,
 	}
 	domDescriptor = fieldDescriptor{
-		name:         _domDescriptor,
-		min:          1,
-		max:          31,
-		valuePattern: `0?[1-9]|[12][0-9]|3[01]`,
+		name: _domDescriptor,
+		min:  1,
+		max:  31,
 	}
 	monthDescriptor = fieldDescriptor{
-		name:         _monthDescriptor,
-		min:          1,
-		max:          12,
-		valuePattern: `0?[1-9]|1[012]|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december`,
+		name: _monthDescriptor,
+		min:  1,
+		max:  12,
 	}
 	dowDescriptor = fieldDescriptor{
-		name:         _dowDescriptor,
-		min:          0,
-		max:          6,
-		valuePattern: `0?[0-7]|sun|mon|tue|wed|thu|fri|sat|sunday|monday|tuesday|wednesday|thursday|friday|saturday`,
+		name: _dowDescriptor,
+		min:  0,
+		max:  6,
 	}
 	yearDescriptor = fieldDescriptor{
-		name:         _yearDescriptor,
-		min:          1970,
-		max:          math.MaxInt32,
-		valuePattern: `[0-9]{4}`,
+		name: _yearDescriptor,
+		min:  1970,
+		max:  math.MaxInt32,
 	}
 
 	cronNormalizer = strings.NewReplacer(
@@ -189,70 +202,12 @@ func (c *CronExpression) parseField(s string, desc fieldDescriptor) error {
 
 	ranges := make([]*timeRange, 0, len(indices))
 	for i := range indices {
-
-		r := &timeRange{
-			step: 1,
+		entry := s[indices[i][0]:indices[i][1]]
+		r, err := c.parseFieldEntry(entry, desc)
+		if err != nil {
+			return err
 		}
-		snormal := strings.ToLower(s[indices[i][0]:indices[i][1]])
-		// `*`
-		if c.getOrCompileRegexp(layoutWildcard, desc.valuePattern).MatchString(snormal) {
-			r.begin = desc.min
-			r.end = desc.max
-			ranges = append(ranges, r)
-			continue
-		}
-		// `5`
-		if c.getOrCompileRegexp(layoutValue, desc.valuePattern).MatchString(snormal) {
-			r.begin = c.parseInt(snormal)
-			r.step = 0
-			ranges = append(ranges, r)
-			continue
-		}
-		// `5-20`
-		pairs := c.getOrCompileRegexp(layoutRange, desc.valuePattern).FindStringSubmatchIndex(snormal)
-		if len(pairs) > 0 {
-			r.begin = c.parseInt(snormal[pairs[2]:pairs[3]])
-			r.end = c.parseInt(snormal[pairs[4]:pairs[5]])
-			ranges = append(ranges, r)
-			continue
-		}
-		// `*/2`
-		pairs = c.getOrCompileRegexp(layoutWildcardAndInterval, desc.valuePattern).FindStringSubmatchIndex(snormal)
-		if len(pairs) > 0 {
-			r.begin = desc.min
-			r.end = desc.max
-			r.step = c.parseInt(snormal[pairs[2]:pairs[3]])
-			if r.step < 1 || r.step > desc.max {
-				return fmt.Errorf("invalid interval %s", snormal)
-			}
-			ranges = append(ranges, r)
-			continue
-		}
-		// `5/2`
-		pairs = c.getOrCompileRegexp(layoutValueAndInterval, desc.valuePattern).FindStringSubmatchIndex(snormal)
-		if len(pairs) > 0 {
-			r.begin = c.parseInt(snormal[pairs[2]:pairs[3]])
-			r.end = desc.max
-
-			r.step = c.parseInt(snormal[pairs[4]:pairs[5]])
-			if r.step < 1 || r.step > desc.max {
-				return fmt.Errorf("invalid interval %s", snormal)
-			}
-			ranges = append(ranges, r)
-			continue
-		}
-		// `5-20/2`
-		pairs = c.getOrCompileRegexp(layoutRangeAndInterval, desc.valuePattern).FindStringSubmatchIndex(snormal)
-		if len(pairs) > 0 {
-			r.begin = c.parseInt(snormal[pairs[2]:pairs[3]])
-			r.end = c.parseInt(snormal[pairs[4]:pairs[5]])
-			r.step = c.parseInt(snormal[pairs[6]:pairs[7]])
-			if r.step < 1 || r.step > desc.max {
-				return fmt.Errorf("invalid interval %s", snormal)
-			}
-			ranges = append(ranges, r)
-			continue
-		}
+		ranges = append(ranges, r)
 	}
 
 	switch desc.name {
@@ -274,78 +229,124 @@ func (c *CronExpression) parseField(s string, desc fieldDescriptor) error {
 	return nil
 }
 
-func (c *CronExpression) getOrCompileRegexp(layout, value string) *regexp.Regexp {
-	c.layoutRegexpLock.Lock()
-	defer c.layoutRegexpLock.Unlock()
+func (c *CronExpression) parseFieldEntry(entry string, desc fieldDescriptor) (*timeRange, error) {
+	r := &timeRange{step: 1}
+	entryLower := strings.ToLower(entry)
 
-	layout = strings.Replace(layout, `%value%`, value, -1)
-	re := c.layoutRegexp[layout]
-	if re == nil {
-		re = regexp.MustCompile(layout)
-		c.layoutRegexp[layout] = re
+	// 快速路径：`*` 或 `?`
+	if entryLower == "*" || entryLower == "?" {
+		r.begin = desc.min
+		r.end = desc.max
+		return r, nil
 	}
-	return re
-}
 
-func (c *CronExpression) parseInt(s string) int {
-	i, err := strconv.Atoi(s)
+	// 快速路径：`*/N` 格式
+	if strings.HasPrefix(entryLower, "*/") {
+		stepStr := entryLower[2:]
+		step, err := strconv.Atoi(stepStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid interval %s", entry)
+		}
+		if step < 1 || step > desc.max {
+			return nil, fmt.Errorf("invalid interval %s", entry)
+		}
+		r.begin = desc.min
+		r.end = desc.max
+		r.step = step
+		return r, nil
+	}
+
+	// 尝试解析 `value/step` 格式
+	if idx := strings.IndexByte(entryLower, '/'); idx > 0 {
+		valueStr := entryLower[:idx]
+		stepStr := entryLower[idx+1:]
+		step, err := strconv.Atoi(stepStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid interval %s", entry)
+		}
+		if step < 1 || step > desc.max {
+			return nil, fmt.Errorf("invalid interval %s", entry)
+		}
+
+		// 检查是否是范围 `begin-end/step`
+		if dashIdx := strings.IndexByte(valueStr, '-'); dashIdx > 0 {
+			beginStr := valueStr[:dashIdx]
+			endStr := valueStr[dashIdx+1:]
+			begin, err := c.parseValue(beginStr, desc)
+			if err != nil {
+				return nil, err
+			}
+			end, err := c.parseValue(endStr, desc)
+			if err != nil {
+				return nil, err
+			}
+			r.begin = begin
+			r.end = end
+			r.step = step
+			return r, nil
+		}
+
+		// `value/step` 格式
+		begin, err := c.parseValue(valueStr, desc)
+		if err != nil {
+			return nil, err
+		}
+		r.begin = begin
+		r.end = desc.max
+		r.step = step
+		return r, nil
+	}
+
+	// 尝试解析 `begin-end` 格式
+	if idx := strings.IndexByte(entryLower, '-'); idx > 0 {
+		beginStr := entryLower[:idx]
+		endStr := entryLower[idx+1:]
+		begin, err := c.parseValue(beginStr, desc)
+		if err != nil {
+			return nil, err
+		}
+		end, err := c.parseValue(endStr, desc)
+		if err != nil {
+			return nil, err
+		}
+		r.begin = begin
+		r.end = end
+		return r, nil
+	}
+
+	// 单个值
+	value, err := c.parseValue(entryLower, desc)
 	if err != nil {
-		// 这里使用 panic 是因为在 parseField 中已经通过正则表达式验证了格式
-		// 如果正则匹配成功但 Atoi 失败，说明是内部错误，应该 panic
-		panic(fmt.Sprintf("internal error: failed to parse number '%s': %v", s, err))
+		return nil, err
 	}
-	return i
+	r.begin = value
+	r.step = 0
+	return r, nil
 }
 
-// printRaw is a debug method that prints the internal structure of CronExpression.
-// It should only be used for debugging purposes.
-// Deprecated: This method is for debugging only and may be removed in future versions.
-func (c *CronExpression) printRaw() {
-	// second field (optional)
-	fmt.Print("second field:")
-	for _, r := range c.second {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
+func (c *CronExpression) parseValue(s string, desc fieldDescriptor) (int, error) {
+	// 尝试直接解析为数字
+	if val, err := strconv.Atoi(s); err == nil {
+		if val < desc.min || val > desc.max {
+			return 0, fmt.Errorf("value %d out of range [%d, %d] for %s", val, desc.min, desc.max, desc.name)
+		}
+		return val, nil
 	}
-	fmt.Print("\t")
-	// minute field
 
-	fmt.Print("minute field:")
-	for _, r := range c.minute {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
+	// 尝试月份名称
+	if desc.name == _monthDescriptor {
+		if val, ok := monthNames[s]; ok {
+			return val, nil
+		}
 	}
-	fmt.Print("\t")
 
-	// hour field
-	fmt.Print("hour field:")
-	for _, r := range c.hour {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
+	// 尝试星期名称
+	if desc.name == _dowDescriptor {
+		if val, ok := weekNames[s]; ok {
+			return val, nil
+		}
 	}
-	fmt.Print("\t")
 
-	// day of month field
-	fmt.Print("day month field:")
-	for _, r := range c.day {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
-	}
-	fmt.Print("\t")
-
-	// month field
-
-	fmt.Print("month field:")
-	for _, r := range c.month {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
-	}
-	fmt.Print("\t")
-
-	fmt.Print("day week field:")
-	for _, r := range c.week {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
-	}
-	fmt.Print("\t")
-
-	fmt.Print("year field:")
-	for _, r := range c.year {
-		fmt.Print(fmt.Sprintf(" begin:%d end:%d step:%d  ", r.begin, r.end, r.step))
-	}
-	fmt.Println()
+	// 如果都不匹配，返回错误
+	return 0, fmt.Errorf("invalid value %s for %s", s, desc.name)
 }

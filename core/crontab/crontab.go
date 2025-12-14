@@ -2,8 +2,6 @@ package crontab
 
 import (
 	"math"
-	"regexp"
-	"sync"
 	"time"
 )
 
@@ -14,15 +12,13 @@ type timeRange struct {
 }
 
 type CronExpression struct {
-	year             []*timeRange
-	month            []*timeRange
-	day              []*timeRange
-	week             []*timeRange
-	hour             []*timeRange
-	minute           []*timeRange
-	second           []*timeRange
-	layoutRegexp     map[string]*regexp.Regexp
-	layoutRegexpLock sync.Mutex
+	year   []*timeRange
+	month  []*timeRange
+	day    []*timeRange
+	week   []*timeRange
+	hour   []*timeRange
+	minute []*timeRange
+	second []*timeRange
 }
 
 func (c *CronExpression) Init() {
@@ -47,8 +43,6 @@ func (c *CronExpression) Init() {
 	if c.second == nil {
 		c.second = []*timeRange{{begin: 0, end: 59, step: 1}}
 	}
-
-	c.layoutRegexp = make(map[string]*regexp.Regexp)
 }
 
 func (c *CronExpression) normalizeUnit(ranges []*timeRange, val int) (carry bool, newVal int) {
