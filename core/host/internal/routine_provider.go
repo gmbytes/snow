@@ -1,10 +1,12 @@
 package internal
 
 import (
+	"reflect"
+	"runtime"
+	"sync/atomic"
+
 	"github.com/mogud/snow/core/host"
 	"github.com/mogud/snow/core/injection"
-	"reflect"
-	"sync/atomic"
 )
 
 var _ injection.IRoutineProvider = (*RoutineProvider)(nil)
@@ -51,7 +53,17 @@ func (ss *RoutineProvider) GetKeyedRoutine(key any, ty reflect.Type) any {
 		return instance
 	}
 
+	// 使用退避策略的自旋锁，避免无限等待
+	backoff := 1
+	maxBackoff := 64
 	for !atomic.CompareAndSwapInt32(&descriptor.InitLock, 0, 1) {
+		// 退避策略：每次循环后让出 CPU
+		for i := 0; i < backoff; i++ {
+			runtime.Gosched()
+		}
+		if backoff < maxBackoff {
+			backoff <<= 1
+		}
 	}
 
 	instance = scope.GetKeyedScopedRoutine(key, ty)

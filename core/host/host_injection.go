@@ -1,12 +1,13 @@
 package host
 
 import (
+	"reflect"
+	"strings"
+
 	"github.com/mogud/snow/core/injection"
 	"github.com/mogud/snow/core/logging"
 	"github.com/mogud/snow/core/logging/handler"
 	"github.com/mogud/snow/core/option"
-	"reflect"
-	"strings"
 )
 
 var optionContainerType = reflect.TypeOf((*option.IOptionInjector)(nil)).Elem()
@@ -16,9 +17,11 @@ func Inject(scope injection.IRoutineScope, instance any) bool {
 	v := reflect.ValueOf(instance)
 	vTy := v.Type()
 
+	found := false
 	for i := 0; i < vTy.NumMethod(); i++ {
 		fMethod := vTy.Method(i)
 		if strings.HasPrefix(fMethod.Name, "Construct") {
+			found = true
 			fTy := fMethod.Type
 			args := make([]reflect.Value, 0, fTy.NumIn())
 			args = append(args, v)
@@ -45,7 +48,7 @@ func Inject(scope injection.IRoutineScope, instance any) bool {
 			fMethod.Func.Call(args)
 		}
 	}
-	return false
+	return found
 }
 
 // NewStruct 通过反射创建指定类型 T 的实例，类型 T 必须为结构体指针

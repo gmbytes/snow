@@ -1,8 +1,9 @@
 package host
 
 import (
-	"github.com/mogud/snow/core/injection"
 	"reflect"
+
+	"github.com/mogud/snow/core/injection"
 )
 
 type IHost interface {
@@ -13,5 +14,14 @@ type IHost interface {
 
 func GetRoutine[T any](provider injection.IRoutineProvider) T {
 	ty := reflect.TypeOf((*T)(nil)).Elem()
-	return provider.GetRoutine(ty).(T)
+	instance := provider.GetRoutine(ty)
+	if instance == nil {
+		var zero T
+		return zero
+	}
+	if result, ok := instance.(T); ok {
+		return result
+	}
+	// 类型不匹配时 panic，因为这是编程错误
+	panic("GetRoutine: type assertion failed")
 }

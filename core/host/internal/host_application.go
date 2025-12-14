@@ -1,8 +1,9 @@
 package internal
 
 import (
-	"github.com/mogud/snow/core/host"
 	"sync/atomic"
+
+	"github.com/mogud/snow/core/host"
 )
 
 var _ host.IHostApplication = (*HostApplication)(nil)
@@ -50,13 +51,14 @@ func (ss *HostApplication) EmitRoutineStopped() {
 }
 
 func (ss *HostApplication) StopApplication() {
+	// 第一次调用：0 -> 1，执行 stopping listeners
 	if ss.secondPass.CompareAndSwap(0, 1) {
-		return
-	}
-
-	if ss.secondPass.CompareAndSwap(1, 2) {
 		for _, listener := range ss.stoppingListeners {
 			listener()
 		}
+		return
 	}
+
+	// 第二次调用：1 -> 2，不再执行（避免重复调用）
+	_ = ss.secondPass.CompareAndSwap(1, 2)
 }

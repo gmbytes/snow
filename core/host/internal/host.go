@@ -3,13 +3,14 @@ package internal
 import (
 	"context"
 	"fmt"
+	"time"
+	"unsafe"
+
 	"github.com/mogud/snow/core/host"
 	"github.com/mogud/snow/core/injection"
 	"github.com/mogud/snow/core/logging"
 	"github.com/mogud/snow/core/option"
 	"github.com/mogud/snow/core/sync"
-	"time"
-	"unsafe"
 )
 
 var _ host.IHost = (*Host)(nil)
@@ -84,8 +85,13 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						ss.logger.Errorf("panic in BeforeStart: %v", err)
+					}
+					routineWg.Done()
+				}()
 				routine.BeforeStart(ctx, routineWg)
-				routineWg.Done()
 			}()
 		}
 		if !routineWg.WaitTimeout(time.Duration(ss.option.StartWaitTimeoutSeconds) * time.Second) {
@@ -106,8 +112,13 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			for _, routine := range ss.hostedLifecycleRoutines {
 				routine := routine
 				go func() {
+					defer func() {
+						if err := recover(); err != nil {
+							ss.logger.Errorf("panic in lifecycle routine Start: %v", err)
+						}
+						routineWg.Done()
+					}()
 					routine.Start(ctx, routineWg)
-					routineWg.Done()
 				}()
 			}
 		}
@@ -117,8 +128,13 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			for _, routine := range ss.hostedRoutines {
 				routine := routine
 				go func() {
+					defer func() {
+						if err := recover(); err != nil {
+							ss.logger.Errorf("panic in routine Start: %v", err)
+						}
+						routineWg.Done()
+					}()
 					routine.Start(ctx, routineWg)
-					routineWg.Done()
 				}()
 			}
 		}
@@ -139,8 +155,13 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						ss.logger.Errorf("panic in AfterStart: %v", err)
+					}
+					routineWg.Done()
+				}()
 				routine.AfterStart(ctx, routineWg)
-				routineWg.Done()
 			}()
 		}
 
@@ -160,8 +181,13 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						ss.logger.Errorf("panic in BeforeStop: %v", err)
+					}
+					routineWg.Done()
+				}()
 				routine.BeforeStop(ctx, routineWg)
-				routineWg.Done()
 			}()
 		}
 		if !routineWg.WaitTimeout(time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second) {
@@ -176,8 +202,13 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			for _, routine := range ss.hostedLifecycleRoutines {
 				routine := routine
 				go func() {
+					defer func() {
+						if err := recover(); err != nil {
+							ss.logger.Errorf("panic in lifecycle routine Stop: %v", err)
+						}
+						routineWg.Done()
+					}()
 					routine.Stop(ctx, routineWg)
-					routineWg.Done()
 				}()
 			}
 		}
@@ -186,8 +217,13 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 			for _, routine := range ss.hostedRoutines {
 				routine := routine
 				go func() {
+					defer func() {
+						if err := recover(); err != nil {
+							ss.logger.Errorf("panic in routine Stop: %v", err)
+						}
+						routineWg.Done()
+					}()
 					routine.Stop(ctx, routineWg)
-					routineWg.Done()
 				}()
 			}
 		}
@@ -202,8 +238,13 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						ss.logger.Errorf("panic in AfterStop: %v", err)
+					}
+					routineWg.Done()
+				}()
 				routine.AfterStop(ctx, routineWg)
-				routineWg.Done()
 			}()
 		}
 		if !routineWg.WaitTimeout(time.Duration(ss.option.StopWaitTimeoutSeconds) * time.Second) {
