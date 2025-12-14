@@ -12,6 +12,7 @@ require (
 	github.com/tidwall/btree v1.8.1
 	github.com/trapcodeio/go-strip-json-comments v1.0.11
 	github.com/valyala/fasthttp v1.68.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -23,5 +24,4 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

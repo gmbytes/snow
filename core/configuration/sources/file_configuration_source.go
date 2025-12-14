@@ -130,7 +130,7 @@ func (ss *FileConfigurationProvider) loadFile() {
 	data, err := os.ReadFile(ss.path)
 	if err != nil {
 		if !ss.optional {
-			fmt.Printf("read file error: %v\n", err.Error())
+			log.Printf("read file error: %v", err.Error())
 		}
 		return
 	}
