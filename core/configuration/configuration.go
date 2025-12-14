@@ -1,7 +1,6 @@
 package configuration
 
 import (
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
 )
 
@@ -15,12 +14,12 @@ type IConfigurationProvider interface {
 	Set(key string, value string)
 	GetReloadNotifier() notifier.INotifier
 	Load()
-	GetChildKeys(parentPath string) container.List[string]
+	GetChildKeys(parentPath string) []string
 }
 
 type IConfigurationBuilder interface {
-	GetProperties() container.Map[string, any]
-	GetSources() container.List[IConfigurationSource]
+	GetProperties() map[string]any
+	GetSources() []IConfigurationSource
 	AddSource(source IConfigurationSource)
 	BuildConfigurationRoot() IConfigurationRoot
 }
@@ -30,8 +29,8 @@ type IConfiguration interface {
 	TryGet(key string) (value string, ok bool)
 	Set(key string, value string)
 	GetSection(key string) IConfigurationSection
-	GetChildren() container.List[IConfigurationSection]
-	GetChildrenByPath(path string) container.List[IConfigurationSection]
+	GetChildren() []IConfigurationSection
+	GetChildrenByPath(path string) []IConfigurationSection
 	GetReloadNotifier() notifier.INotifier
 }
 
@@ -39,7 +38,7 @@ type IConfigurationRoot interface {
 	IConfiguration
 
 	Reload()
-	GetProviders() container.List[IConfigurationProvider]
+	GetProviders() []IConfigurationProvider
 }
 
 type IConfigurationSection interface {

@@ -1,37 +1,35 @@
 package configuration
 
-import "github.com/mogud/snow/core/container"
-
 var _ IConfigurationBuilder = (*Builder)(nil)
 
 type Builder struct {
-	properties container.Map[string, any]
-	sources    container.List[IConfigurationSource]
+	properties map[string]any
+	sources    []IConfigurationSource
 }
 
 func NewBuilder() *Builder {
 	return &Builder{
-		properties: container.NewMap[string, any](),
-		sources:    container.NewList[IConfigurationSource](),
+		properties: make(map[string]any),
+		sources:    make([]IConfigurationSource, 0),
 	}
 }
 
-func (ss *Builder) GetProperties() container.Map[string, any] {
+func (ss *Builder) GetProperties() map[string]any {
 	return ss.properties
 }
 
-func (ss *Builder) GetSources() container.List[IConfigurationSource] {
+func (ss *Builder) GetSources() []IConfigurationSource {
 	return ss.sources
 }
 
 func (ss *Builder) AddSource(source IConfigurationSource) {
-	ss.sources.Add(source)
+	ss.sources = append(ss.sources, source)
 }
 
 func (ss *Builder) BuildConfigurationRoot() IConfigurationRoot {
-	providers := container.NewList[IConfigurationProvider]()
+	providers := make([]IConfigurationProvider, 0, len(ss.sources))
 	for _, source := range ss.sources {
-		providers.Add(source.BuildConfigurationProvider(ss))
+		providers = append(providers, source.BuildConfigurationProvider(ss))
 	}
 	return NewConfigurationRoot(providers)
 }

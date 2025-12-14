@@ -21,7 +21,6 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/host"
 	"github.com/mogud/snow/core/injection"
 	"github.com/mogud/snow/core/kvs"
@@ -294,14 +293,18 @@ func (ss *Node) Start(ctx context.Context, wg *sync2.TimeoutWaitGroup) {
 		h.onTick()
 	}, nil)
 
-	var services []*container.Pair[string, int32]
+	type servicePair struct {
+		First  string
+		Second int32
+	}
+	var services []*servicePair
 	for _, sn := range Config.CurNodeServices {
 		sAddr, err := newService(sn)
 		if err != nil {
 			ss.logger.Fatalf("create service(%s) error: %+v", sn, err)
 		}
 		ss.name2Addr[sn] = sAddr
-		services = append(services, &container.Pair[string, int32]{
+		services = append(services, &servicePair{
 			First:  sn,
 			Second: sAddr,
 		})

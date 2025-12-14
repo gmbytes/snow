@@ -3,7 +3,6 @@ package configuration
 import (
 	"sync"
 
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
 )
 
@@ -12,11 +11,11 @@ var _ IConfigurationRoot = (*Root)(nil)
 type Root struct {
 	lock sync.Mutex
 
-	providers container.List[IConfigurationProvider]
+	providers []IConfigurationProvider
 	notifier  *Notifier
 }
 
-func NewConfigurationRoot(providers container.List[IConfigurationProvider]) IConfigurationRoot {
+func NewConfigurationRoot(providers []IConfigurationProvider) IConfigurationRoot {
 	root := &Root{
 		providers: providers,
 		notifier:  NewNotifier(),
@@ -34,7 +33,7 @@ func (ss *Root) Get(key string) string {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	for i := ss.providers.Len() - 1; i >= 0; i-- {
+	for i := len(ss.providers) - 1; i >= 0; i-- {
 		if value, ok := ss.providers[i].TryGet(key); ok {
 			return value
 		}
@@ -46,7 +45,7 @@ func (ss *Root) TryGet(key string) (value string, ok bool) {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	for i := ss.providers.Len() - 1; i >= 0; i-- {
+	for i := len(ss.providers) - 1; i >= 0; i-- {
 		if value, ok := ss.providers[i].TryGet(key); ok {
 			return value, true
 		}
@@ -67,22 +66,22 @@ func (ss *Root) GetSection(key string) IConfigurationSection {
 	return NewSection(ss, key)
 }
 
-func (ss *Root) GetChildren() container.List[IConfigurationSection] {
+func (ss *Root) GetChildren() []IConfigurationSection {
 	return ss.GetChildrenByPath("")
 }
 
-func (ss *Root) GetChildrenByPath(path string) container.List[IConfigurationSection] {
+func (ss *Root) GetChildrenByPath(path string) []IConfigurationSection {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	keySet := container.NewSet[string]()
+	keySet := make(map[string]struct{})
 	for _, provider := range ss.providers {
 		for _, key := range provider.GetChildKeys(path) {
-			keySet.Add(key)
+			keySet[key] = struct{}{}
 		}
 	}
 
-	sections := make([]IConfigurationSection, 0, keySet.Len())
+	sections := make([]IConfigurationSection, 0, len(keySet))
 	if len(path) > 0 {
 		for key := range keySet {
 			sections = append(sections, ss.GetSection(path+KeyDelimiter+key))
@@ -110,6 +109,6 @@ func (ss *Root) Reload() {
 	ss.notifier.Notify()
 }
 
-func (ss *Root) GetProviders() container.List[IConfigurationProvider] {
+func (ss *Root) GetProviders() []IConfigurationProvider {
 	return ss.providers
 }

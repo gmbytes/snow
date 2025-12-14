@@ -1,7 +1,6 @@
 package compound
 
 import (
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/logging"
 	"github.com/mogud/snow/core/option"
 )
@@ -14,7 +13,7 @@ type Option struct {
 }
 
 type Handler struct {
-	proxy container.List[logging.ILogHandler]
+	proxy []logging.ILogHandler
 	opt   *Option
 }
 
@@ -40,5 +39,5 @@ func (ss *Handler) Log(data *logging.LogData) {
 }
 
 func (ss *Handler) AddHandler(logger logging.ILogHandler) {
-	ss.proxy.Add(logger)
+	ss.proxy = append(ss.proxy, logger)
 }

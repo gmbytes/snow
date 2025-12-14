@@ -1,10 +1,10 @@
 package configuration
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
 )
 
@@ -12,13 +12,13 @@ var _ IConfigurationProvider = (*Provider)(nil)
 
 type Provider struct {
 	lock     sync.Mutex
-	data     *container.CaseInsensitiveStringMap[string]
+	data     *CaseInsensitiveStringMap[string]
 	notifier *Notifier
 }
 
 func NewProvider() *Provider {
 	return &Provider{
-		data:     container.NewCaseInsensitiveStringMap[string](),
+		data:     NewCaseInsensitiveStringMap[string](),
 		notifier: NewNotifier(),
 	}
 }
@@ -46,7 +46,7 @@ func (ss *Provider) GetReloadNotifier() notifier.INotifier {
 	return ss.notifier
 }
 
-func (ss *Provider) Replace(data *container.CaseInsensitiveStringMap[string]) {
+func (ss *Provider) Replace(data *CaseInsensitiveStringMap[string]) {
 	ss.lock.Lock()
 	ss.data = data
 	ss.lock.Unlock()
@@ -62,28 +62,28 @@ func (ss *Provider) OnReload() {
 	ss.notifier.Notify()
 }
 
-func (ss *Provider) GetChildKeys(parentPath string) container.List[string] {
+func (ss *Provider) GetChildKeys(parentPath string) []string {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
 	return getSortedSegmentChildKeys(ss.data, parentPath)
 }
 
-func getSortedSegmentChildKeys(m *container.CaseInsensitiveStringMap[string], parentPath string) container.List[string] {
-	childKeys := container.NewList[string]()
+func getSortedSegmentChildKeys(m *CaseInsensitiveStringMap[string], parentPath string) []string {
+	childKeys := make([]string, 0)
 	if len(parentPath) == 0 {
 		m.Scan(func(key, _ string) {
-			childKeys.Add(keySegment(key, 0))
+			childKeys = append(childKeys, keySegment(key, 0))
 		})
 	} else {
 		upperParentPath := strings.ToUpper(parentPath)
 		m.ScanFull(func(upperKey, key, _ string) {
 			if len(upperKey) > len(parentPath) && strings.HasPrefix(upperKey, upperParentPath) && upperKey[len(parentPath)] == ':' {
-				childKeys.Add(keySegment(key, len(parentPath)+1))
+				childKeys = append(childKeys, keySegment(key, len(parentPath)+1))
 			}
 		})
 	}
-	container.Sort(childKeys)
+	sort.Strings(childKeys)
 	return childKeys
 }
 

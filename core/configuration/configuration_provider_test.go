@@ -1,10 +1,10 @@
 package configuration_test
 
 import (
-	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/container"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/mogud/snow/core/configuration"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestProvider_Get(t *testing.T) {
@@ -49,15 +49,15 @@ func TestProvider_GetChildKeys(t *testing.T) {
 	keys := provider.GetChildKeys("")
 	// GetChildKeys 会返回所有键的第一段，包括重复的
 	// 实际返回: ["database", "database", "database", "app"]
-	assert.GreaterOrEqual(t, keys.Len(), 2)
-	assert.True(t, container.ListContains(keys, "database"))
-	assert.True(t, container.ListContains(keys, "app"))
+	assert.GreaterOrEqual(t, len(keys), 2)
+	assert.Contains(t, keys, "database")
+	assert.Contains(t, keys, "app")
 
 	keys = provider.GetChildKeys("database")
-	assert.Equal(t, 3, keys.Len())
-	assert.True(t, container.ListContains(keys, "host"))
-	assert.True(t, container.ListContains(keys, "port"))
-	assert.True(t, container.ListContains(keys, "name"))
+	assert.Equal(t, 3, len(keys))
+	assert.Contains(t, keys, "host")
+	assert.Contains(t, keys, "port")
+	assert.Contains(t, keys, "name")
 }
 
 func TestProvider_GetReloadNotifier(t *testing.T) {
@@ -78,7 +78,7 @@ func TestProvider_Replace(t *testing.T) {
 	provider := configuration.NewProvider()
 	provider.Set("key1", "value1")
 
-	newData := container.NewCaseInsensitiveStringMap[string]()
+	newData := configuration.NewCaseInsensitiveStringMap[string]()
 	newData.Add("key2", "value2")
 	newData.Add("key3", "value3")
 
@@ -88,4 +88,3 @@ func TestProvider_Replace(t *testing.T) {
 	assert.Equal(t, "value2", provider.Get("key2"))
 	assert.Equal(t, "value3", provider.Get("key3"))
 }
-

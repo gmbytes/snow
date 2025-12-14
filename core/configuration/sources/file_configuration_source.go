@@ -14,7 +14,6 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/container"
 )
 
 var _ configuration.IConfigurationSource = (*FileConfigurationSource)(nil)
@@ -111,7 +110,7 @@ func (ss *FileConfigurationProvider) Load() {
 						if pathEquals(event.Name, ss.path) {
 							log.Printf("file watcher received Rename or Remove: %v", event.Name)
 							ss.loadLock.Lock()
-							ss.Replace(container.NewCaseInsensitiveStringMap[string]())
+							ss.Replace(configuration.NewCaseInsensitiveStringMap[string]())
 							ss.loadLock.Unlock()
 							ss.OnReload()
 						}

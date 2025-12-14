@@ -156,7 +156,7 @@ func fillValue(val reflect.Value, config IConfiguration, key string) {
 	case reflect.Slice:
 		children := config.GetSection(key).GetChildren()
 		slice := reflect.MakeSlice(ty, 0, len(children))
-		for i := 0; i < children.Len(); i++ {
+		for i := 0; i < len(children); i++ {
 			sv := reflect.New(ty.Elem()).Elem()
 			fillValue(sv, config.GetSection(key), strconv.Itoa(i))
 			slice = reflect.Append(slice, sv)

@@ -1,26 +1,26 @@
 package configuration
 
 import (
-	"github.com/mogud/snow/core/container"
-	"github.com/mogud/snow/core/notifier"
 	"sync"
+
+	"github.com/mogud/snow/core/notifier"
 )
 
 var _ IConfigurationManager = (*Manager)(nil)
 
 type Manager struct {
 	lock       sync.Mutex
-	properties container.Map[string, any]
-	sources    container.List[IConfigurationSource]
-	providers  container.List[IConfigurationProvider]
+	properties map[string]any
+	sources    []IConfigurationSource
+	providers  []IConfigurationProvider
 	notifier   *Notifier
 }
 
 func NewManager() *Manager {
 	return &Manager{
-		properties: make(container.Map[string, any]),
-		sources:    container.NewList[IConfigurationSource](),
-		providers:  container.NewList[IConfigurationProvider](),
+		properties: make(map[string]any),
+		sources:    make([]IConfigurationSource, 0),
+		providers:  make([]IConfigurationProvider, 0),
 		notifier:   NewNotifier(),
 	}
 }
@@ -29,7 +29,7 @@ func (ss *Manager) Get(key string) string {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	for i := ss.providers.Len() - 1; i >= 0; i-- {
+	for i := len(ss.providers) - 1; i >= 0; i-- {
 		if value, ok := ss.providers[i].TryGet(key); ok {
 			return value
 		}
@@ -41,7 +41,7 @@ func (ss *Manager) TryGet(key string) (value string, ok bool) {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	for i := ss.providers.Len() - 1; i >= 0; i-- {
+	for i := len(ss.providers) - 1; i >= 0; i-- {
 		if value, ok = ss.providers[i].TryGet(key); ok {
 			return value, true
 		}
@@ -62,22 +62,22 @@ func (ss *Manager) GetSection(key string) IConfigurationSection {
 	return NewSection(ss, key)
 }
 
-func (ss *Manager) GetChildren() container.List[IConfigurationSection] {
+func (ss *Manager) GetChildren() []IConfigurationSection {
 	return ss.GetChildrenByPath("")
 }
 
-func (ss *Manager) GetChildrenByPath(path string) container.List[IConfigurationSection] {
+func (ss *Manager) GetChildrenByPath(path string) []IConfigurationSection {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	keySet := container.NewSet[string]()
+	keySet := make(map[string]struct{})
 	for _, provider := range ss.providers {
 		for _, key := range provider.GetChildKeys(path) {
-			keySet.Add(key)
+			keySet[key] = struct{}{}
 		}
 	}
 
-	sections := make([]IConfigurationSection, 0, keySet.Len())
+	sections := make([]IConfigurationSection, 0, len(keySet))
 	if len(path) > 0 {
 		for key := range keySet {
 			sections = append(sections, ss.GetSection(path+KeyDelimiter+key))
@@ -105,15 +105,15 @@ func (ss *Manager) Reload() {
 	}
 }
 
-func (ss *Manager) GetProviders() container.List[IConfigurationProvider] {
+func (ss *Manager) GetProviders() []IConfigurationProvider {
 	return ss.providers
 }
 
-func (ss *Manager) GetProperties() container.Map[string, any] {
+func (ss *Manager) GetProperties() map[string]any {
 	return ss.properties
 }
 
-func (ss *Manager) GetSources() container.List[IConfigurationSource] {
+func (ss *Manager) GetSources() []IConfigurationSource {
 	return ss.sources
 }
 
@@ -126,8 +126,8 @@ func (ss *Manager) AddSource(source IConfigurationSource) {
 	ss.lock.Lock()
 	defer ss.lock.Unlock()
 
-	ss.sources.Add(source)
-	ss.providers.Add(newProvider)
+	ss.sources = append(ss.sources, source)
+	ss.providers = append(ss.providers, newProvider)
 
 	newProvider.GetReloadNotifier().RegisterNotifyCallback(ss.notifier.Notify)
 }

@@ -11,8 +11,8 @@ import (
 func TestManager_NewManager(t *testing.T) {
 	manager := configuration.NewManager()
 	assert.NotNil(t, manager)
-	assert.Equal(t, 0, manager.GetSources().Len())
-	assert.Equal(t, 0, manager.GetProviders().Len())
+	assert.Equal(t, 0, len(manager.GetSources()))
+	assert.Equal(t, 0, len(manager.GetProviders()))
 }
 
 func TestManager_AddSource(t *testing.T) {
@@ -27,8 +27,8 @@ func TestManager_AddSource(t *testing.T) {
 
 	manager.AddSource(source)
 
-	assert.Equal(t, 1, manager.GetSources().Len())
-	assert.Equal(t, 1, manager.GetProviders().Len())
+	assert.Equal(t, 1, len(manager.GetSources()))
+	assert.Equal(t, 1, len(manager.GetProviders()))
 	assert.Equal(t, "value1", manager.Get("key1"))
 	assert.Equal(t, "value2", manager.Get("key2"))
 }
@@ -132,10 +132,10 @@ func TestManager_GetChildren(t *testing.T) {
 	manager.AddSource(source)
 
 	children := manager.GetChildren()
-	assert.Equal(t, 2, children.Len())
+	assert.Equal(t, 2, len(children))
 
 	children = manager.GetChildrenByPath("database")
-	assert.Equal(t, 2, children.Len())
+	assert.Equal(t, 2, len(children))
 }
 
 func TestManager_Reload(t *testing.T) {

@@ -1,7 +1,6 @@
 package configuration
 
 import (
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
 )
 
@@ -37,11 +36,11 @@ func (ss *Section) GetSection(key string) IConfigurationSection {
 	return ss.root.GetSection(ss.path + KeyDelimiter + key)
 }
 
-func (ss *Section) GetChildren() container.List[IConfigurationSection] {
+func (ss *Section) GetChildren() []IConfigurationSection {
 	return ss.root.GetChildrenByPath(ss.path)
 }
 
-func (ss *Section) GetChildrenByPath(path string) container.List[IConfigurationSection] {
+func (ss *Section) GetChildrenByPath(path string) []IConfigurationSection {
 	return ss.root.GetChildrenByPath(ss.path + KeyDelimiter + path)
 }
 

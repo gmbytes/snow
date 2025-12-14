@@ -2,11 +2,11 @@ package sources
 
 import (
 	"fmt"
+	"log"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/container"
 	stripjsoncomments "github.com/trapcodeio/go-strip-json-comments"
-	"log"
 )
 
 var _ configuration.IConfigurationSource = (*JsonConfigurationSource)(nil)
@@ -45,20 +45,20 @@ func (ss *JsonConfigurationProvider) OnLoadJson(bytes []byte) {
 	newMap, err := ConvertJsonToConfigurationKV("", jsonWithoutComments)
 	if err != nil {
 		log.Printf("load json: %v", err)
-		ss.Replace(container.NewCaseInsensitiveStringMap[string]())
+		ss.Replace(configuration.NewCaseInsensitiveStringMap[string]())
 		return
 	}
 
 	ss.Replace(newMap)
 }
 
-func ConvertJsonToConfigurationKV(head string, json string) (*container.CaseInsensitiveStringMap[string], error) {
+func ConvertJsonToConfigurationKV(head string, json string) (*configuration.CaseInsensitiveStringMap[string], error) {
 	var jsons map[string]any
 	if err := jsoniter.UnmarshalFromString(json, &jsons); err != nil {
 		return nil, fmt.Errorf("json unmashal failed: %v\n", err)
 	}
 
-	newMap := container.NewCaseInsensitiveStringMap[string]()
+	newMap := configuration.NewCaseInsensitiveStringMap[string]()
 	for key, value := range jsons {
 		if len(head) == 0 {
 			fillMap(newMap, key, value)
@@ -69,7 +69,7 @@ func ConvertJsonToConfigurationKV(head string, json string) (*container.CaseInse
 	return newMap, nil
 }
 
-func fillMap(m *container.CaseInsensitiveStringMap[string], key string, value any) {
+func fillMap(m *configuration.CaseInsensitiveStringMap[string], key string, value any) {
 	switch v := value.(type) {
 	case string:
 		m.Add(key, v)

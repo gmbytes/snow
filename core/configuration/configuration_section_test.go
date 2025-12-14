@@ -97,7 +97,7 @@ func TestSection_GetChildren(t *testing.T) {
 	section := manager.GetSection("database")
 	children := section.GetChildren()
 
-	assert.Equal(t, 2, children.Len())
+	assert.Equal(t, 2, len(children))
 }
 
 func TestSection_GetChildrenByPath(t *testing.T) {
@@ -114,7 +114,7 @@ func TestSection_GetChildrenByPath(t *testing.T) {
 	section := manager.GetSection("database")
 	children := section.GetChildrenByPath("mysql")
 
-	assert.Equal(t, 2, children.Len())
+	assert.Equal(t, 2, len(children))
 }
 
 func TestSection_GetKey(t *testing.T) {

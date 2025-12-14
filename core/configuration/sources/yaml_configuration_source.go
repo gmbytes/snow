@@ -2,10 +2,10 @@ package sources
 
 import (
 	"fmt"
-	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/container"
-	"gopkg.in/yaml.v3"
 	"log"
+
+	"github.com/mogud/snow/core/configuration"
+	"gopkg.in/yaml.v3"
 )
 
 var _ configuration.IConfigurationSource = (*YamlConfigurationSource)(nil)
@@ -42,23 +42,23 @@ func (ss *YamlConfigurationProvider) OnLoadYaml(bytes []byte) {
 	var yamlData any
 	if err := yaml.Unmarshal(bytes, &yamlData); err != nil {
 		log.Printf("load yaml: %v", err)
-		ss.Replace(container.NewCaseInsensitiveStringMap[string]())
+		ss.Replace(configuration.NewCaseInsensitiveStringMap[string]())
 		return
 	}
 
 	newMap, err := ConvertYamlToConfigurationKV("", yamlData)
 	if err != nil {
 		log.Printf("convert yaml to configuration: %v", err)
-		ss.Replace(container.NewCaseInsensitiveStringMap[string]())
+		ss.Replace(configuration.NewCaseInsensitiveStringMap[string]())
 		return
 	}
 
 	ss.Replace(newMap)
 }
 
-func ConvertYamlToConfigurationKV(head string, yamlData any) (*container.CaseInsensitiveStringMap[string], error) {
-	newMap := container.NewCaseInsensitiveStringMap[string]()
-	
+func ConvertYamlToConfigurationKV(head string, yamlData any) (*configuration.CaseInsensitiveStringMap[string], error) {
+	newMap := configuration.NewCaseInsensitiveStringMap[string]()
+
 	// 处理顶层可能是 map 或直接是其他类型的情况
 	switch data := yamlData.(type) {
 	case map[string]any:
@@ -95,7 +95,7 @@ func ConvertYamlToConfigurationKV(head string, yamlData any) (*container.CaseIns
 	return newMap, nil
 }
 
-func fillMapFromYaml(m *container.CaseInsensitiveStringMap[string], key string, value any) error {
+func fillMapFromYaml(m *configuration.CaseInsensitiveStringMap[string], key string, value any) error {
 	switch v := value.(type) {
 	case string:
 		m.Add(key, v)
@@ -158,4 +158,3 @@ func fillMapFromYaml(m *container.CaseInsensitiveStringMap[string], key string, 
 	}
 	return nil
 }
-

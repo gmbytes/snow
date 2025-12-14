@@ -3,7 +3,6 @@ package configuration
 import (
 	"sync"
 
-	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
 )
 
@@ -11,7 +10,7 @@ var _ notifier.INotifier = (*Notifier)(nil)
 
 type Notifier struct {
 	lock      sync.Mutex
-	callbacks container.List[func()]
+	callbacks []func()
 }
 
 func NewNotifier() *Notifier {
@@ -25,7 +24,7 @@ func (ss *Notifier) RegisterNotifyCallback(callback func()) {
 }
 
 func (ss *Notifier) Notify() {
-	var cbs container.List[func()]
+	var cbs []func()
 	ss.lock.Lock()
 	cbs = ss.callbacks
 	ss.lock.Unlock()
