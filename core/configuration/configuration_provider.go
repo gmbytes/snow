@@ -1,10 +1,11 @@
 package configuration
 
 import (
-	"github.com/mogud/snow/core/container"
-	"github.com/mogud/snow/core/notifier"
 	"strings"
 	"sync"
+
+	"github.com/mogud/snow/core/container"
+	"github.com/mogud/snow/core/notifier"
 )
 
 var _ IConfigurationProvider = (*Provider)(nil)
@@ -47,8 +48,11 @@ func (ss *Provider) GetReloadNotifier() notifier.INotifier {
 
 func (ss *Provider) Replace(data *container.CaseInsensitiveStringMap[string]) {
 	ss.lock.Lock()
-	defer ss.lock.Unlock()
 	ss.data = data
+	ss.lock.Unlock()
+
+	// 通知监听者数据已更新
+	ss.OnReload()
 }
 
 func (ss *Provider) Load() {
@@ -60,7 +64,7 @@ func (ss *Provider) OnReload() {
 
 func (ss *Provider) GetChildKeys(parentPath string) container.List[string] {
 	ss.lock.Lock()
-	ss.lock.Unlock()
+	defer ss.lock.Unlock()
 
 	return getSortedSegmentChildKeys(ss.data, parentPath)
 }

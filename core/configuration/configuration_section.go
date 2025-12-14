@@ -61,6 +61,10 @@ func (ss *Section) GetValue() (string, bool) {
 	return ss.root.TryGet(ss.path)
 }
 
-func (ss *Section) SetValue(key, value string) {
-	ss.root.Set(key, value)
+func (ss *Section) SetValue(key string, value string) {
+	if key == "" {
+		ss.root.Set(ss.path, value)
+	} else {
+		ss.root.Set(ss.path+KeyDelimiter+key, value)
+	}
 }

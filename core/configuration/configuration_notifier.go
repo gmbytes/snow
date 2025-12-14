@@ -1,9 +1,10 @@
 package configuration
 
 import (
+	"sync"
+
 	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
-	"sync"
 )
 
 var _ notifier.INotifier = (*Notifier)(nil)
@@ -30,6 +31,14 @@ func (ss *Notifier) Notify() {
 	ss.lock.Unlock()
 
 	for _, callback := range cbs {
-		callback()
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// 防止一个 callback 的 panic 影响其他 callback
+					// 这里可以记录日志，但为了避免循环依赖，暂时不记录
+				}
+			}()
+			callback()
+		}()
 	}
 }

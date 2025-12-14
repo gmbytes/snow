@@ -163,7 +163,7 @@ func TestSection_SetValue(t *testing.T) {
 	manager.AddSource(source)
 	section := manager.GetSection("database")
 
-	section.SetValue("database", "testdb")
+	section.SetValue("", "testdb")
 	value, ok := section.GetValue()
 	assert.True(t, ok)
 	assert.Equal(t, "testdb", value)

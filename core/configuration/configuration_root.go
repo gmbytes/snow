@@ -1,9 +1,10 @@
 package configuration
 
 import (
+	"sync"
+
 	"github.com/mogud/snow/core/container"
 	"github.com/mogud/snow/core/notifier"
-	"sync"
 )
 
 var _ IConfigurationRoot = (*Root)(nil)
@@ -99,7 +100,11 @@ func (ss *Root) GetReloadNotifier() notifier.INotifier {
 }
 
 func (ss *Root) Reload() {
-	for _, provider := range ss.providers {
+	ss.lock.Lock()
+	providers := ss.providers
+	ss.lock.Unlock()
+
+	for _, provider := range providers {
 		provider.Load()
 	}
 	ss.notifier.Notify()

@@ -1,17 +1,20 @@
 package sources
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/container"
 	"log"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/mogud/snow/core/configuration"
+	"github.com/mogud/snow/core/container"
 )
 
 var _ configuration.IConfigurationSource = (*FileConfigurationSource)(nil)
@@ -35,21 +38,32 @@ type FileConfigurationProvider struct {
 	optional       bool
 	reloadOnChange bool
 	loaded         bool
+	loadLock       sync.Mutex
+
+	watcher *fsnotify.Watcher
+	ctx     context.Context
+	cancel  context.CancelFunc
 
 	OnLoad func(bytes []byte)
 }
 
 func NewFileConfigurationProvider(source *FileConfigurationSource) *FileConfigurationProvider {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &FileConfigurationProvider{
 		Provider:       configuration.NewProvider(),
 		path:           source.Path,
 		optional:       source.Optional,
 		reloadOnChange: source.ReloadOnChange,
+		ctx:            ctx,
+		cancel:         cancel,
 		OnLoad:         func(bytes []byte) {},
 	}
 }
 
 func (ss *FileConfigurationProvider) Load() {
+	ss.loadLock.Lock()
+	defer ss.loadLock.Unlock()
+
 	if ss.loaded {
 		if ss.reloadOnChange {
 			return
@@ -65,13 +79,18 @@ func (ss *FileConfigurationProvider) Load() {
 	if ss.reloadOnChange {
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("failed to create file watcher: %v", err)
+			return
 		}
+		ss.watcher = watcher
 
 		go func() {
+			defer watcher.Close()
 			var uniqueRead int32
 			for {
 				select {
+				case <-ss.ctx.Done():
+					return
 				case event, ok := <-watcher.Events:
 					if !ok {
 						return
@@ -82,19 +101,25 @@ func (ss *FileConfigurationProvider) Load() {
 							go func() {
 								<-time.After(500 * time.Millisecond)
 								atomic.StoreInt32(&uniqueRead, 0)
+								ss.loadLock.Lock()
 								ss.loadFile()
+								ss.loadLock.Unlock()
 								ss.OnReload()
 							}()
 						}
 					} else if event.Has(fsnotify.Remove) {
 						if pathEquals(event.Name, ss.path) {
 							log.Printf("file watcher received Rename or Remove: %v", event.Name)
+							ss.loadLock.Lock()
 							ss.Replace(container.NewCaseInsensitiveStringMap[string]())
+							ss.loadLock.Unlock()
 							ss.OnReload()
 						}
 					}
 				case err, ok := <-watcher.Errors:
-					log.Println("file watcher error:", err)
+					if err != nil {
+						log.Println("file watcher error:", err)
+					}
 					if !ok {
 						return
 					}
@@ -110,14 +135,36 @@ func (ss *FileConfigurationProvider) Load() {
 
 			err = os.MkdirAll(parentDir, os.ModeDir)
 			if err != nil {
-				log.Fatalf("create watcher path(%v) failed: %v", parentDir, err.Error())
+				log.Printf("create watcher path(%v) failed: %v", parentDir, err.Error())
+				watcher.Close()
+				ss.watcher = nil
+				return
 			}
 			err = watcher.Add(parentDir)
 			if err != nil {
-				log.Fatalf("cannot watch path(%v): %v", parentDir, err.Error())
+				log.Printf("cannot watch path(%v): %v", parentDir, err.Error())
+				watcher.Close()
+				ss.watcher = nil
+				return
 			}
 		}
 	}
+}
+
+// Close 关闭文件监听器，释放资源
+func (ss *FileConfigurationProvider) Close() error {
+	ss.loadLock.Lock()
+	defer ss.loadLock.Unlock()
+
+	if ss.cancel != nil {
+		ss.cancel()
+	}
+	if ss.watcher != nil {
+		err := ss.watcher.Close()
+		ss.watcher = nil
+		return err
+	}
+	return nil
 }
 
 func (ss *FileConfigurationProvider) loadFile() {
