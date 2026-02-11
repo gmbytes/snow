@@ -1,21 +1,18 @@
 package math
 
-import (
-	"github.com/gmbytes/snow/core/constraints"
-)
+import "cmp"
 
-func Clamp[T constraints.Ordered](v T, minV T, maxV T) T {
-	switch {
-	case v < minV:
-		return minV
-	case v > maxV:
-		return maxV
-	default:
-		return v
-	}
+type Numeric interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr |
+		~float32 | ~float64
 }
 
-func Abs[T constraints.Integer | constraints.Float](a T) T {
+func Clamp[T cmp.Ordered](v T, minV T, maxV T) T {
+	return max(min(v, maxV), minV)
+}
+
+func Abs[T Numeric](a T) T {
 	if a < 0 {
 		return -a
 	}

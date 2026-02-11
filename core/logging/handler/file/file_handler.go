@@ -2,16 +2,16 @@ package file
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gmbytes/snow/core/logging"
-	"github.com/gmbytes/snow/core/maps"
 	"github.com/gmbytes/snow/core/option"
 )
 
@@ -68,7 +68,7 @@ func NewHandler() *Handler {
 		handler.cacheFilterKeyMap[sPath] = struct{}{}
 	}
 
-	sort.Strings(handler.sortedFilterKeys)
+	slices.Sort(handler.sortedFilterKeys)
 	return handler
 }
 
@@ -95,8 +95,7 @@ func (ss *Handler) Construct(option *option.Option[*Option], repo *logging.LogFo
 }
 
 func (ss *Handler) CheckOption() {
-	ss.sortedFilterKeys = maps.Keys(ss.option.Filter)
-	sort.Strings(ss.sortedFilterKeys)
+	ss.sortedFilterKeys = slices.Sorted(maps.Keys(ss.option.Filter))
 
 	if ss.option.MaxLogChanLength <= 0 {
 		ss.option.MaxLogChanLength = 102400

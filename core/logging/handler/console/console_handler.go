@@ -2,14 +2,14 @@ package console
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/gmbytes/snow/core/logging"
-	"github.com/gmbytes/snow/core/maps"
 	"github.com/gmbytes/snow/core/option"
 )
 
@@ -43,8 +43,7 @@ func NewHandler() *Handler {
 		formatter: logging.ColorLogFormatter,
 	}
 
-	handler.sortedFilterKeys = maps.Keys(handler.option.Filter)
-	sort.Strings(handler.sortedFilterKeys)
+	handler.sortedFilterKeys = slices.Sorted(maps.Keys(handler.option.Filter))
 	return handler
 }
 
@@ -69,8 +68,7 @@ func (ss *Handler) Construct(opt *option.Option[*Option], repo *logging.LogForma
 }
 
 func (ss *Handler) CheckOption() {
-	ss.sortedFilterKeys = maps.Keys(ss.option.Filter)
-	sort.Strings(ss.sortedFilterKeys)
+	ss.sortedFilterKeys = slices.Sorted(maps.Keys(ss.option.Filter))
 
 	if ss.option.DefaultLevel == logging.NONE {
 		ss.option.DefaultLevel = logging.INFO
