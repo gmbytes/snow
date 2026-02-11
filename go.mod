@@ -1,6 +1,6 @@
 module github.com/gmbytes/snow
 
-go 1.24.0
+go 1.26.0
 
 require (
 	github.com/arl/assertgo v0.0.0-20180702120748-a1be5afdc871
