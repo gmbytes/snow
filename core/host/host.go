@@ -3,7 +3,7 @@ package host
 import (
 	"reflect"
 
-	"github.com/mogud/snow/core/injection"
+	"github.com/gmbytes/snow/core/injection"
 )
 
 type IHost interface {

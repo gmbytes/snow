@@ -1,7 +1,7 @@
 package node
 
 import (
-	"github.com/mogud/snow/core/task"
+	"github.com/gmbytes/snow/core/task"
 	"sync/atomic"
 )
 

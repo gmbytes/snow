@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mogud/snow/core/task"
+	"github.com/gmbytes/snow/core/task"
 )
 
 type PoolItem interface {

@@ -1,7 +1,7 @@
 package dh_test
 
 import (
-	"github.com/mogud/snow/core/encrypt/dh"
+	"github.com/gmbytes/snow/core/encrypt/dh"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

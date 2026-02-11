@@ -6,11 +6,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/injection"
-	"github.com/mogud/snow/core/logging"
-	"github.com/mogud/snow/core/option"
-	"github.com/mogud/snow/core/sync"
+	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/core/injection"
+	"github.com/gmbytes/snow/core/logging"
+	"github.com/gmbytes/snow/core/option"
+	"github.com/gmbytes/snow/core/sync"
 )
 
 var _ host.IHost = (*Host)(nil)

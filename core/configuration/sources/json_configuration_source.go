@@ -5,7 +5,7 @@ import (
 	"log"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/mogud/snow/core/configuration"
+	"github.com/gmbytes/snow/core/configuration"
 	stripjsoncomments "github.com/trapcodeio/go-strip-json-comments"
 )
 

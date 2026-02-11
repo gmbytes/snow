@@ -3,7 +3,7 @@ package internal
 import (
 	"sync/atomic"
 
-	"github.com/mogud/snow/core/host"
+	"github.com/gmbytes/snow/core/host"
 )
 
 var _ host.IHostApplication = (*HostApplication)(nil)

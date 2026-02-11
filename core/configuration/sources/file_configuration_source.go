@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/mogud/snow/core/configuration"
+	"github.com/gmbytes/snow/core/configuration"
 )
 
 var _ configuration.IConfigurationSource = (*FileConfigurationSource)(nil)

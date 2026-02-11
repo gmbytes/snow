@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/mogud/snow/core/logging"
+	"github.com/gmbytes/snow/core/logging"
 )
 
 var _ logging.ILogHandler = (*RootHandler)(nil)

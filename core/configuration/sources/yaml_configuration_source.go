@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mogud/snow/core/configuration"
+	"github.com/gmbytes/snow/core/configuration"
 	"gopkg.in/yaml.v3"
 )
 

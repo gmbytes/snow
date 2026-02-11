@@ -1,4 +1,4 @@
-module github.com/mogud/snow
+module github.com/gmbytes/snow
 
 go 1.24.0
 

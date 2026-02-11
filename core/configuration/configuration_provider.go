@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mogud/snow/core/notifier"
+	"github.com/gmbytes/snow/core/notifier"
 )
 
 var _ IConfigurationProvider = (*Provider)(nil)

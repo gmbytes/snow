@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/host/builder"
-	"github.com/mogud/snow/core/logging/slog"
-	"github.com/mogud/snow/core/sync"
-	"github.com/mogud/snow/routines/ignore_input"
+	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/core/host/builder"
+	"github.com/gmbytes/snow/core/logging/slog"
+	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/routines/ignore_input"
 )
 
 var _ host.IHostedRoutine = (*clock)(nil)

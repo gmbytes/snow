@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"github.com/mogud/snow/core/host"
+	"github.com/gmbytes/snow/core/host"
 )
 
 var _ host.IHostedRoutineContainer = (*HostedRoutineContainer)(nil)

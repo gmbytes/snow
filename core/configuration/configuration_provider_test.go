@@ -3,7 +3,7 @@ package configuration_test
 import (
 	"testing"
 
-	"github.com/mogud/snow/core/configuration"
+	"github.com/gmbytes/snow/core/configuration"
 	"github.com/stretchr/testify/assert"
 )
 

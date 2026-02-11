@@ -16,20 +16,20 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/mogud/snow/core/ticker"
+	"github.com/gmbytes/snow/core/ticker"
 	"github.com/valyala/fasthttp"
 
 	_ "net/http/pprof"
 
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/injection"
-	"github.com/mogud/snow/core/kvs"
-	"github.com/mogud/snow/core/logging"
-	"github.com/mogud/snow/core/logging/slog"
-	net2 "github.com/mogud/snow/core/net"
-	"github.com/mogud/snow/core/option"
-	sync2 "github.com/mogud/snow/core/sync"
-	"github.com/mogud/snow/core/task"
+	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/core/injection"
+	"github.com/gmbytes/snow/core/kvs"
+	"github.com/gmbytes/snow/core/logging"
+	"github.com/gmbytes/snow/core/logging/slog"
+	net2 "github.com/gmbytes/snow/core/net"
+	"github.com/gmbytes/snow/core/option"
+	sync2 "github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/task"
 )
 
 const TickInterval = 5 * time.Millisecond

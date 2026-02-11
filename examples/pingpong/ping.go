@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mogud/snow/routines/node"
+	"github.com/gmbytes/snow/routines/node"
 )
 
 type ping struct {

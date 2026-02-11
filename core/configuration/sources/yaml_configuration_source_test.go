@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/configuration/sources"
+	"github.com/gmbytes/snow/core/configuration"
+	"github.com/gmbytes/snow/core/configuration/sources"
 	"github.com/stretchr/testify/assert"
 )
 

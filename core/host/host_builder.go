@@ -1,11 +1,11 @@
 package host
 
 import (
-	"github.com/mogud/snow/core/configuration"
-	"github.com/mogud/snow/core/injection"
-	"github.com/mogud/snow/core/logging"
-	"github.com/mogud/snow/core/logging/handler/compound"
-	"github.com/mogud/snow/core/option"
+	"github.com/gmbytes/snow/core/configuration"
+	"github.com/gmbytes/snow/core/injection"
+	"github.com/gmbytes/snow/core/logging"
+	"github.com/gmbytes/snow/core/logging/handler/compound"
+	"github.com/gmbytes/snow/core/option"
 	"reflect"
 )
 

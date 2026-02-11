@@ -3,7 +3,7 @@ package slog
 import (
 	"sync/atomic"
 
-	"github.com/mogud/snow/core/logging"
+	"github.com/gmbytes/snow/core/logging"
 )
 
 var globalLogger atomic.Pointer[logging.ILogger]

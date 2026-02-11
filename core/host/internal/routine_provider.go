@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"sync/atomic"
 
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/injection"
+	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/core/injection"
 )
 
 var _ injection.IRoutineProvider = (*RoutineProvider)(nil)

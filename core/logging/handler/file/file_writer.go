@@ -9,7 +9,7 @@ import (
 	"path"
 
 	"github.com/klauspost/compress/zstd"
-	"github.com/mogud/snow/core/task"
+	"github.com/gmbytes/snow/core/task"
 )
 
 type writerElement struct {

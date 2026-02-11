@@ -2,8 +2,8 @@ package node
 
 import (
 	assert "github.com/arl/assertgo"
-	"github.com/mogud/snow/core/debug"
-	"github.com/mogud/snow/core/logging/slog"
+	"github.com/gmbytes/snow/core/debug"
+	"github.com/gmbytes/snow/core/logging/slog"
 	"time"
 )
 

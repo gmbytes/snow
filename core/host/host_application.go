@@ -2,7 +2,7 @@ package host
 
 import (
 	"context"
-	"github.com/mogud/snow/core/sync"
+	"github.com/gmbytes/snow/core/sync"
 )
 
 type IHostApplication interface {

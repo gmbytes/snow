@@ -2,8 +2,8 @@ package host
 
 import (
 	"context"
-	"github.com/mogud/snow/core/injection"
-	"github.com/mogud/snow/core/sync"
+	"github.com/gmbytes/snow/core/injection"
+	"github.com/gmbytes/snow/core/sync"
 )
 
 type IHostedRoutine interface {

@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"github.com/mogud/snow/core/injection"
+	"github.com/gmbytes/snow/core/injection"
 	"reflect"
 	"sync"
 )

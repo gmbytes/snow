@@ -3,7 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
-	"github.com/mogud/snow/core/task"
+	"github.com/gmbytes/snow/core/task"
 	"github.com/valyala/fasthttp"
 	"net"
 	"net/http"

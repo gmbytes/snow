@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/logging"
-	sync2 "github.com/mogud/snow/core/sync"
+	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/core/logging"
+	sync2 "github.com/gmbytes/snow/core/sync"
 )
 
 var _ host.IHostedRoutine = (*ConsoleLifetimeRoutine)(nil)

@@ -3,7 +3,7 @@ package configuration
 import (
 	"sync"
 
-	"github.com/mogud/snow/core/notifier"
+	"github.com/gmbytes/snow/core/notifier"
 )
 
 var _ IConfigurationRoot = (*Root)(nil)

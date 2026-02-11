@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/mogud/snow/core/task"
+	"github.com/gmbytes/snow/core/task"
 	"io"
 	"net/http"
 	"reflect"

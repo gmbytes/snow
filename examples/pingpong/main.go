@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/mogud/snow/core/host"
-	"github.com/mogud/snow/core/host/builder"
-	"github.com/mogud/snow/routines/ignore_input"
-	"github.com/mogud/snow/routines/node"
+	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/core/host/builder"
+	"github.com/gmbytes/snow/routines/ignore_input"
+	"github.com/gmbytes/snow/routines/node"
 )
 
 func main() {

@@ -4,10 +4,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/mogud/snow/core/injection"
-	"github.com/mogud/snow/core/logging"
-	"github.com/mogud/snow/core/logging/handler"
-	"github.com/mogud/snow/core/option"
+	"github.com/gmbytes/snow/core/injection"
+	"github.com/gmbytes/snow/core/logging"
+	"github.com/gmbytes/snow/core/logging/handler"
+	"github.com/gmbytes/snow/core/option"
 )
 
 var optionContainerType = reflect.TypeOf((*option.IOptionInjector)(nil)).Elem()

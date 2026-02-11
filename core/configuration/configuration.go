@@ -1,7 +1,7 @@
 package configuration
 
 import (
-	"github.com/mogud/snow/core/notifier"
+	"github.com/gmbytes/snow/core/notifier"
 )
 
 type IConfigurationSource interface {
