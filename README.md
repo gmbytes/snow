@@ -452,9 +452,3 @@ type ICodec interface {
 - 提供 mock 工具（mock IProxy、mock IRpcContext）
 - 提供集成测试框架（快速启动 / 停止测试节点）
 - 为 Service 提供独立的单元测试运行环境
-
-#### 16. Go 标准库对齐
-
-- `core/constraints` 包可以替换为标准库 `golang.org/x/exp/constraints` 或 `cmp`
-- `core/maps` 包可以替换为标准库 `maps` 和 `slices`（Go 1.21+）
-- 减少维护自有工具包的负担
