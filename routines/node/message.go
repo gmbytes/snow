@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/gmbytes/snow/core/xjson"
 )
 
 const messageHeaderLen = 24
@@ -36,7 +36,7 @@ func (ss *message) marshalArgs(args []reflect.Value) ([]byte, error) {
 		mArgs = append(mArgs, arg.Interface())
 	}
 
-	bs, err := jsoniter.ConfigDefault.Marshal(mArgs)
+	bs, err := xjson.Marshal(mArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (ss *message) unmarshalArgs(bs []byte, argI int, ft reflect.Type) ([]reflec
 	for i := argI; i < ft.NumIn(); i++ {
 		tArgs = append(tArgs, reflect.New(ft.In(i)).Interface())
 	}
-	if err := jsoniter.ConfigDefault.Unmarshal(bs, &tArgs); err != nil {
+	if err := xjson.Unmarshal(bs, &tArgs); err != nil {
 		return nil, err
 	}
 	ret := make([]reflect.Value, 0, len(tArgs))

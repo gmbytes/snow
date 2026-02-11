@@ -3,11 +3,11 @@ package node
 import (
 	"crypto/tls"
 	"fmt"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/gmbytes/snow/core/debug"
 	"github.com/gmbytes/snow/core/logging"
 	"github.com/gmbytes/snow/core/task"
 	"github.com/gmbytes/snow/core/ticker"
+	"github.com/gmbytes/snow/core/xjson"
 	"github.com/valyala/fasthttp"
 	"math/rand/v2"
 	"net/http"
@@ -612,9 +612,9 @@ func (ss *Service) handleHttpRpc(ctx *fasthttp.RequestCtx) {
 	select {
 	case <-ch:
 	case <-time.After(30 * time.Second):
-		res, err := jsoniter.MarshalToString(&httpResponse{
+		res, err := xjson.MarshalToString(&httpResponse{
 			StatusCode: http.StatusRequestTimeout,
-			Result:     jsoniter.RawMessage("no response from remote service, is 'EnableHttpRpc' called?"),
+			Result:     xjson.RawMessage("no response from remote service, is 'EnableHttpRpc' called?"),
 		})
 		if err != nil {
 			ctx.Error("http rpc response marshal error", http.StatusInternalServerError)
@@ -725,7 +725,7 @@ func (ss *Service) createProxy(updater *AddrUpdater, nAddr Addr, sAddr int32, na
 
 func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 	var hc httpRequest
-	if err := jsoniter.Unmarshal(ctx.Request.Body(), &hc); err != nil {
+	if err := xjson.Unmarshal(ctx.Request.Body(), &hc); err != nil {
 		ctx.Error("invalid http rpc structure", http.StatusBadRequest)
 		return
 	}
@@ -751,7 +751,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 		for i := 2; i < ft.NumIn(); i++ {
 			args = append(args, reflect.New(ft.In(i)).Interface())
 		}
-		if err := jsoniter.Unmarshal(hc.Args, &args); err != nil {
+		if err := xjson.Unmarshal(hc.Args, &args); err != nil {
 			ctx.Error("invalid http rpc arguments", http.StatusBadRequest)
 			return
 		}
@@ -777,7 +777,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 
 				ch <- &httpResponse{
 					StatusCode: http.StatusInternalServerError,
-					Result:     jsoniter.RawMessage(fmt.Sprintf("internal game logic error")),
+					Result:     xjson.RawMessage(fmt.Sprintf("internal game logic error")),
 				}
 			}
 		}()
@@ -800,7 +800,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 			return
 		}
 
-		res, err := jsoniter.MarshalToString(rsp)
+		res, err := xjson.MarshalToString(rsp)
 		if err != nil {
 			srv.Fork("Service.httpRpcHandler.onError", func() {
 				httpRpcCtx.onError(err)

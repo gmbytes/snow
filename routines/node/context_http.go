@@ -1,8 +1,9 @@
 package node
 
 import (
-	jsoniter "github.com/json-iterator/go"
 	"net/http"
+
+	"github.com/gmbytes/snow/core/xjson"
 )
 
 var _ IRpcContext = (*httpRpcContext)(nil)
@@ -39,11 +40,11 @@ func (ss *httpRpcContext) Return(args ...any) {
 	if args == nil {
 		args = make([]any, 0)
 	}
-	argsStr, err := jsoniter.Marshal(args)
+	argsStr, err := xjson.Marshal(args)
 	if err != nil {
 		ss.ch <- &httpResponse{
 			StatusCode: http.StatusInternalServerError,
-			Result:     jsoniter.RawMessage(err.Error()),
+			Result:     xjson.RawMessage(err.Error()),
 		}
 		return
 	}
@@ -61,7 +62,7 @@ func (ss *httpRpcContext) Error(err error) {
 
 	ss.ch <- &httpResponse{
 		StatusCode: http.StatusBadRequest,
-		Result:     jsoniter.RawMessage(err.Error()),
+		Result:     xjson.RawMessage(err.Error()),
 	}
 }
 

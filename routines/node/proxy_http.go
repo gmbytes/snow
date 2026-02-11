@@ -3,8 +3,8 @@ package node
 import (
 	"bytes"
 	"fmt"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/gmbytes/snow/core/task"
+	"github.com/gmbytes/snow/core/xjson"
 	"io"
 	"net/http"
 	"reflect"
@@ -14,14 +14,14 @@ import (
 const httpRpcPathPrefix = "/node/rpc/"
 
 type httpRequest struct {
-	Func string              `json:"Func"`
-	Post bool                `json:"Post"`
-	Args jsoniter.RawMessage `json:"Args"`
+	Func string           `json:"Func"`
+	Post bool             `json:"Post"`
+	Args xjson.RawMessage `json:"Args"`
 }
 
 type httpResponse struct {
-	StatusCode int                 `json:"-"`
-	Result     jsoniter.RawMessage `json:"Result"`
+	StatusCode int            `json:"-"`
+	Result     xjson.RawMessage `json:"Result"`
 }
 
 var _ iProxy = (*httpProxy)(nil)
@@ -53,7 +53,7 @@ func (ss *httpProxy) onError(p *promise, err error) {
 
 func (ss *httpProxy) doCall(p *promise) {
 	task.Execute(func() {
-		argsStr, err := jsoniter.Marshal(p.args)
+		argsStr, err := xjson.Marshal(p.args)
 		if err != nil {
 			ss.onError(p, err)
 			return
@@ -74,7 +74,7 @@ func (ss *httpProxy) doCall(p *promise) {
 			httpClient.Timeout = p.timeout
 		}
 
-		bs, _ := jsoniter.ConfigDefault.Marshal(req)
+		bs, _ := xjson.Marshal(req)
 		resp, err := httpClient.Post(ss.url, "application/json", bytes.NewBuffer(bs))
 		if err != nil {
 			ss.onError(p, err)
@@ -116,7 +116,7 @@ func (ss *httpProxy) prepareThen(p *promise, resp *http.Response) {
 	}
 
 	var rsp httpResponse
-	err = jsoniter.Unmarshal(rspBody, &rsp)
+	err = xjson.Unmarshal(rspBody, &rsp)
 	if err != nil {
 		ss.onError(p, err)
 		return
@@ -127,7 +127,7 @@ func (ss *httpProxy) prepareThen(p *promise, resp *http.Response) {
 	for i := 0; i < ft.NumIn(); i++ {
 		resArgs = append(resArgs, reflect.New(ft.In(i)).Interface())
 	}
-	if err = jsoniter.Unmarshal(rsp.Result, &resArgs); err != nil {
+	if err = xjson.Unmarshal(rsp.Result, &resArgs); err != nil {
 		ss.onError(p, err)
 		return
 	}

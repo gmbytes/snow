@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/gmbytes/snow/core/configuration"
+	"github.com/gmbytes/snow/core/xjson"
 	stripjsoncomments "github.com/trapcodeio/go-strip-json-comments"
 )
 
@@ -54,7 +54,7 @@ func (ss *JsonConfigurationProvider) OnLoadJson(bytes []byte) {
 
 func ConvertJsonToConfigurationKV(head string, json string) (*configuration.CaseInsensitiveStringMap[string], error) {
 	var jsons map[string]any
-	if err := jsoniter.UnmarshalFromString(json, &jsons); err != nil {
+	if err := xjson.UnmarshalFromString(json, &jsons); err != nil {
 		return nil, fmt.Errorf("json unmashal failed: %v\n", err)
 	}
 
