@@ -1,7 +1,7 @@
-package sync_test
+package xsync_test
 
 import (
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 	"github.com/stretchr/testify/assert"
 	"sync/atomic"
 	"testing"
@@ -10,7 +10,7 @@ import (
 
 func TestWait(t *testing.T) {
 	a := atomic.Int32{}
-	wg := sync.NewTimeoutWaitGroup()
+	wg := xsync.NewTimeoutWaitGroup()
 	wg.Add(1)
 	go func() {
 		a.Store(5)
@@ -22,7 +22,7 @@ func TestWait(t *testing.T) {
 
 func TestWaitTimeout(t *testing.T) {
 	a := atomic.Int32{}
-	wg1 := sync.NewTimeoutWaitGroup()
+	wg1 := xsync.NewTimeoutWaitGroup()
 	wg1.Add(1)
 	go func() {
 		time.Sleep(5 * time.Millisecond)
@@ -32,7 +32,7 @@ func TestWaitTimeout(t *testing.T) {
 	assert.False(t, wg1.WaitTimeout(time.Millisecond))
 	assert.NotEqual(t, int32(5), a.Load())
 
-	wg2 := sync.NewTimeoutWaitGroup()
+	wg2 := xsync.NewTimeoutWaitGroup()
 	wg2.Add(1)
 	go func() {
 		time.Sleep(5 * time.Millisecond)

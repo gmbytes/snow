@@ -1,4 +1,4 @@
-package sync
+package xsync
 
 import (
 	"github.com/gmbytes/snow/core/meta"

@@ -7,7 +7,7 @@ import (
 	"github.com/gmbytes/snow/core/host"
 	"github.com/gmbytes/snow/core/host/builder"
 	"github.com/gmbytes/snow/core/logging/slog"
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 	"github.com/gmbytes/snow/routines/ignore_input"
 )
 
@@ -17,7 +17,7 @@ type clock struct {
 	closeChan chan struct{}
 }
 
-func (ss *clock) Start(_ context.Context, wg *sync.TimeoutWaitGroup) {
+func (ss *clock) Start(_ context.Context, wg *xsync.TimeoutWaitGroup) {
 	ss.closeChan = make(chan struct{})
 
 	go func() {
@@ -35,7 +35,7 @@ func (ss *clock) Start(_ context.Context, wg *sync.TimeoutWaitGroup) {
 	}()
 }
 
-func (ss *clock) Stop(_ context.Context, wg *sync.TimeoutWaitGroup) {
+func (ss *clock) Stop(_ context.Context, wg *xsync.TimeoutWaitGroup) {
 	close(ss.closeChan)
 }
 

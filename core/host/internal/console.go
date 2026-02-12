@@ -11,7 +11,7 @@ import (
 
 	"github.com/gmbytes/snow/core/host"
 	"github.com/gmbytes/snow/core/logging"
-	sync2 "github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 )
 
 var _ host.IHostedRoutine = (*ConsoleLifetimeRoutine)(nil)
@@ -32,7 +32,7 @@ func (ss *ConsoleLifetimeRoutine) Construct(application host.IHostApplication, l
 	})
 }
 
-func (ss *ConsoleLifetimeRoutine) Start(_ context.Context, wg *sync2.TimeoutWaitGroup) {
+func (ss *ConsoleLifetimeRoutine) Start(_ context.Context, wg *xsync.TimeoutWaitGroup) {
 	ss.ctx, ss.cancel = context.WithCancel(context.Background())
 	ss.wg = &sync.WaitGroup{}
 	ss.wg.Add(1)
@@ -61,7 +61,7 @@ func (ss *ConsoleLifetimeRoutine) Start(_ context.Context, wg *sync2.TimeoutWait
 	}()
 }
 
-func (ss *ConsoleLifetimeRoutine) Stop(_ context.Context, wg *sync2.TimeoutWaitGroup) {
+func (ss *ConsoleLifetimeRoutine) Stop(_ context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 

@@ -2,7 +2,7 @@ package host
 
 import (
 	"context"
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 )
 
 type IHostApplication interface {
@@ -25,14 +25,14 @@ func Run(h IHost) {
 		started = true
 	})
 
-	wg := sync.NewTimeoutWaitGroup()
+	wg := xsync.NewTimeoutWaitGroup()
 	h.Start(ctx, wg)
 	wg.Wait()
 
 	<-ctx.Done()
 
 	if started {
-		wg = sync.NewTimeoutWaitGroup()
+		wg = xsync.NewTimeoutWaitGroup()
 		h.Stop(context.Background(), wg)
 		wg.Wait()
 	}

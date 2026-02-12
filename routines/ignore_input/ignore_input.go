@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"github.com/gmbytes/snow/core/host"
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 	"os"
 	"sync/atomic"
 	"time"
@@ -16,7 +16,7 @@ type IgnoreInput struct {
 	closed atomic.Bool
 }
 
-func (ss *IgnoreInput) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
+func (ss *IgnoreInput) Start(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
 		for !ss.closed.Load() {
@@ -27,6 +27,6 @@ func (ss *IgnoreInput) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}()
 }
 
-func (ss *IgnoreInput) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
+func (ss *IgnoreInput) Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	ss.closed.Store(true)
 }

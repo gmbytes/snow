@@ -3,12 +3,12 @@ package host
 import (
 	"context"
 	"github.com/gmbytes/snow/core/injection"
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 )
 
 type IHostedRoutine interface {
-	Start(ctx context.Context, wg *sync.TimeoutWaitGroup)
-	Stop(ctx context.Context, wg *sync.TimeoutWaitGroup)
+	Start(ctx context.Context, wg *xsync.TimeoutWaitGroup)
+	Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup)
 }
 
 type IHostedRoutineContainer interface {

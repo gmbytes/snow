@@ -10,7 +10,7 @@ import (
 	"github.com/gmbytes/snow/core/injection"
 	"github.com/gmbytes/snow/core/logging"
 	"github.com/gmbytes/snow/core/option"
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 )
 
 var _ host.IHost = (*Host)(nil)
@@ -50,7 +50,7 @@ func (ss *Host) Construct(option *option.Option[*HostOption], logger *logging.Lo
 	})
 }
 
-func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
+func (ss *Host) Start(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
@@ -90,7 +90,7 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}
 
 	if len(ss.hostedLifecycleRoutines) > 0 {
-		routineWg := sync.NewTimeoutWaitGroup()
+		routineWg := xsync.NewTimeoutWaitGroup()
 		routineWg.Add(len(ss.hostedLifecycleRoutines))
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
@@ -124,7 +124,7 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}
 
 	if len(ss.hostedLifecycleRoutines) > 0 || len(ss.hostedRoutines) > 0 {
-		routineWg := sync.NewTimeoutWaitGroup()
+		routineWg := xsync.NewTimeoutWaitGroup()
 		if len(ss.hostedLifecycleRoutines) > 0 {
 			routineWg.Add(len(ss.hostedLifecycleRoutines))
 			for _, routine := range ss.hostedLifecycleRoutines {
@@ -178,7 +178,7 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}
 
 	if len(ss.hostedLifecycleRoutines) > 0 {
-		routineWg := sync.NewTimeoutWaitGroup()
+		routineWg := xsync.NewTimeoutWaitGroup()
 		routineWg.Add(len(ss.hostedLifecycleRoutines))
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
@@ -207,12 +207,12 @@ func (ss *Host) Start(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}
 }
 
-func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
+func (ss *Host) Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 
 	if len(ss.hostedLifecycleRoutines) > 0 {
-		routineWg := sync.NewTimeoutWaitGroup()
+		routineWg := xsync.NewTimeoutWaitGroup()
 		routineWg.Add(len(ss.hostedLifecycleRoutines))
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine
@@ -240,7 +240,7 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}
 
 	if len(ss.hostedLifecycleRoutines) > 0 || len(ss.hostedRoutines) > 0 {
-		routineWg := sync.NewTimeoutWaitGroup()
+		routineWg := xsync.NewTimeoutWaitGroup()
 		if len(ss.hostedLifecycleRoutines) > 0 {
 			routineWg.Add(len(ss.hostedLifecycleRoutines))
 			for _, routine := range ss.hostedLifecycleRoutines {
@@ -287,7 +287,7 @@ func (ss *Host) Stop(ctx context.Context, wg *sync.TimeoutWaitGroup) {
 	}
 
 	if len(ss.hostedLifecycleRoutines) > 0 {
-		routineWg := sync.NewTimeoutWaitGroup()
+		routineWg := xsync.NewTimeoutWaitGroup()
 		routineWg.Add(len(ss.hostedLifecycleRoutines))
 		for _, routine := range ss.hostedLifecycleRoutines {
 			routine := routine

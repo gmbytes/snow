@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"reflect"
 	"runtime"
@@ -16,20 +17,18 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/gmbytes/snow/core/ticker"
 	"github.com/valyala/fasthttp"
-
-	_ "net/http/pprof"
 
 	"github.com/gmbytes/snow/core/host"
 	"github.com/gmbytes/snow/core/injection"
 	"github.com/gmbytes/snow/core/kvs"
 	"github.com/gmbytes/snow/core/logging"
 	"github.com/gmbytes/snow/core/logging/slog"
-	net2 "github.com/gmbytes/snow/core/net"
 	"github.com/gmbytes/snow/core/option"
-	sync2 "github.com/gmbytes/snow/core/sync"
 	"github.com/gmbytes/snow/core/task"
+	"github.com/gmbytes/snow/core/ticker"
+	"github.com/gmbytes/snow/core/xnet"
+	"github.com/gmbytes/snow/core/xsync"
 )
 
 const TickInterval = 5 * time.Millisecond
@@ -57,8 +56,8 @@ type Option struct {
 
 type RegisterOption struct {
 	ServiceRegisterInfos     []*ServiceRegisterInfo
-	ClientHandlePreprocessor net2.IPreprocessor
-	ServerHandlePreprocessor net2.IPreprocessor
+	ClientHandlePreprocessor xnet.IPreprocessor
+	ServerHandlePreprocessor xnet.IPreprocessor
 	PostInitializer          func()
 	MetricCollector          IMetricCollector
 }
@@ -95,7 +94,7 @@ func CheckedServiceNilPtr[T any, U consService[T]]() any {
 	return (*T)(nil)
 }
 
-var defaultHandlePreprocessor net2.IPreprocessor = &defaultHandlePreprocessorImpl{}
+var defaultHandlePreprocessor xnet.IPreprocessor = &defaultHandlePreprocessorImpl{}
 
 type defaultHandlePreprocessorImpl struct{}
 
@@ -120,8 +119,8 @@ type Node struct {
 	regOpt  *RegisterOption
 
 	nodeScope      injection.IRoutineScope
-	chPreprocessor net2.IPreprocessor
-	shPreprocessor net2.IPreprocessor
+	chPreprocessor xnet.IPreprocessor
+	shPreprocessor xnet.IPreprocessor
 	kind2Info      map[int32]*ServiceRegisterInfo
 	name2Info      map[string]*ServiceRegisterInfo
 	name2Addr      map[string]int32
@@ -270,7 +269,7 @@ func (ss *Node) Construct(host host.IHost, logger *logging.Logger[Node], nodeOpt
 	gNode = ss
 }
 
-func (ss *Node) Start(ctx context.Context, wg *sync2.TimeoutWaitGroup) {
+func (ss *Node) Start(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
 
 	ss.initOptions()
@@ -366,7 +365,7 @@ func (ss *Node) startProfileInterface() {
 	}
 }
 
-func (ss *Node) Stop(ctx context.Context, wg *sync2.TimeoutWaitGroup) {
+func (ss *Node) Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
 	ss.cancel()
 

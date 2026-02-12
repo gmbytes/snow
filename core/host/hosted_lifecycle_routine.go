@@ -2,16 +2,16 @@ package host
 
 import (
 	"context"
-	"github.com/gmbytes/snow/core/sync"
+	"github.com/gmbytes/snow/core/xsync"
 )
 
 type IHostedLifecycleRoutine interface {
 	IHostedRoutine
 
-	BeforeStart(ctx context.Context, wg *sync.TimeoutWaitGroup)
-	AfterStart(ctx context.Context, wg *sync.TimeoutWaitGroup)
-	BeforeStop(ctx context.Context, wg *sync.TimeoutWaitGroup)
-	AfterStop(ctx context.Context, wg *sync.TimeoutWaitGroup)
+	BeforeStart(ctx context.Context, wg *xsync.TimeoutWaitGroup)
+	AfterStart(ctx context.Context, wg *xsync.TimeoutWaitGroup)
+	BeforeStop(ctx context.Context, wg *xsync.TimeoutWaitGroup)
+	AfterStop(ctx context.Context, wg *xsync.TimeoutWaitGroup)
 }
 
 type IHostedLifecycleRoutineContainer interface {
