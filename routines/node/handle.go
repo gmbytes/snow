@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/gmbytes/snow/core/logging/slog"
 	"github.com/gmbytes/snow/core/task"
 	"github.com/gmbytes/snow/core/ticker"
@@ -19,7 +18,7 @@ import (
 var _ iMessageSender = (*remoteHandle)(nil)
 var _ ticker.PoolItem = (*remoteHandle)(nil)
 
-var ErrRemoteDisconnected = fmt.Errorf("remote disconnected")
+var ErrRemoteDisconnected = NewError(ErrTransport, "remote disconnected")
 
 type session struct {
 	timeout time.Time
@@ -84,7 +83,7 @@ func (ss *remoteHandle) send(m *message) bool {
 			if m.cb != nil {
 				em := &message{
 					trace: m.trace,
-					err:   ErrRemoteDisconnected,
+					err:   WrapError(ErrTransport, "remoteHandle.send", ErrRemoteDisconnected),
 				}
 				m.cb(em)
 			}
@@ -159,7 +158,7 @@ func (ss *remoteHandle) closeAllSession() {
 		if ok {
 			v := value.(*session)
 			m := &message{
-				err:   ErrRemoteDisconnected,
+				err:   WrapError(ErrTransport, "remoteHandle.closeAllSession", ErrRemoteDisconnected),
 				trace: v.trace,
 			}
 			v.cb(m)
@@ -184,7 +183,7 @@ func (ss *remoteHandle) onTick() {
 
 				m := &message{
 					trace: v.trace,
-					err:   ErrRequestTimeoutRemote,
+					err:   WrapError(ErrTimeout, "remoteHandle.onTick", ErrRequestTimeoutRemote),
 				}
 				v.cb(m)
 			}
@@ -373,7 +372,7 @@ func (ss *remoteHandle) doDispatch(m *message) {
 			dst:   m.src,
 			sess:  -m.sess,
 			trace: m.trace,
-			err:   fmt.Errorf("invalid address"),
+			err:   NewError(ErrServiceNotFound, "invalid service address"),
 		}
 		ss.send(mm)
 		m.clear()

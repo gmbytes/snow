@@ -3,7 +3,6 @@ package node
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"reflect"
@@ -81,7 +80,7 @@ func (ss *httpProxy) doCall(p *promise) {
 
 		argsStr, err := xjson.Marshal(p.args)
 		if err != nil {
-			ss.onError(p, err)
+			ss.onError(p, WrapError(ErrCodec, "httpProxy.doCall.Marshal", err))
 			return
 		}
 
@@ -94,7 +93,7 @@ func (ss *httpProxy) doCall(p *promise) {
 		bs, _ := xjson.Marshal(req)
 		httpReq, err := http.NewRequestWithContext(reqCtx, "POST", ss.url, bytes.NewBuffer(bs))
 		if err != nil {
-			ss.onError(p, err)
+			ss.onError(p, WrapError(ErrTransport, "httpProxy.doCall.NewRequestWithContext", err))
 			return
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -102,7 +101,7 @@ func (ss *httpProxy) doCall(p *promise) {
 		client := &http.Client{Transport: ss.httpClient.Transport}
 		resp, err := client.Do(httpReq)
 		if err != nil {
-			ss.onError(p, err)
+			ss.onError(p, WrapError(ErrTransport, "httpProxy.doCall.ClientDo", err))
 			return
 		}
 
@@ -115,12 +114,12 @@ func (ss *httpProxy) prepareThen(p *promise, resp *http.Response) {
 	_ = resp.Body.Close()
 
 	if err != nil {
-		ss.onError(p, err)
+		ss.onError(p, WrapError(ErrTransport, "httpProxy.prepareThen.ReadAll", err))
 		return
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		ss.onError(p, fmt.Errorf("http response code(%v): %v", resp.StatusCode, string(rspBody)))
+		ss.onError(p, NewError(ErrTransport, string(rspBody)))
 		return
 	}
 
@@ -136,14 +135,14 @@ func (ss *httpProxy) prepareThen(p *promise, resp *http.Response) {
 
 	fv := reflect.ValueOf(p.successCb)
 	if !fv.IsValid() {
-		ss.onError(p, fmt.Errorf("invalid success callback"))
+		ss.onError(p, NewError(ErrInvalidArgument, "invalid success callback"))
 		return
 	}
 
 	var rsp httpResponse
 	err = xjson.Unmarshal(rspBody, &rsp)
 	if err != nil {
-		ss.onError(p, err)
+		ss.onError(p, WrapError(ErrCodec, "httpProxy.prepareThen.UnmarshalResponse", err))
 		return
 	}
 
@@ -153,7 +152,7 @@ func (ss *httpProxy) prepareThen(p *promise, resp *http.Response) {
 		resArgs = append(resArgs, reflect.New(ft.In(i)).Interface())
 	}
 	if err = xjson.Unmarshal(rsp.Result, &resArgs); err != nil {
-		ss.onError(p, err)
+		ss.onError(p, WrapError(ErrCodec, "httpProxy.prepareThen.UnmarshalResult", err))
 		return
 	}
 

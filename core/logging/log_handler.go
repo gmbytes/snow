@@ -15,6 +15,7 @@ type LogData struct {
 	File     string
 	Line     int
 	Level    Level
+	ErrorCode string
 	Custom   []any
 	Message  func() string
 }

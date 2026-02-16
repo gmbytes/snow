@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"fmt"
 	"github.com/gmbytes/snow/core/task"
 	"github.com/valyala/fasthttp"
 	"net"
@@ -39,9 +38,9 @@ var Config = &nodeConfig{
 	CurNodeMap: map[string]bool{},
 }
 
-func (ss *Node) initOptions() {
+func (ss *Node) initOptions() error {
 	if len(ss.nodeOpt.LocalIP) == 0 {
-		panic("node local ip address empty")
+		return NewError(ErrInvalidArgument, "node local ip address empty")
 	}
 
 	var curHost string
@@ -50,7 +49,7 @@ func (ss *Node) initOptions() {
 	for name, nc := range ss.nodeOpt.Nodes {
 		nAddr, err := NewNodeAddr(nc.Host, nc.Port)
 		if err != nil {
-			ss.logger.Fatalf("invalid node(%s) address: %+v", name, err)
+			return WrapError(ErrInvalidArgument, "node.initOptions.NewNodeAddr", err)
 		}
 
 		info := &nodeInfo{
@@ -74,7 +73,7 @@ func (ss *Node) initOptions() {
 			Config.CurNodeName = name
 			for _, s := range nc.Services {
 				if Config.CurNodeMap[s] {
-					ss.logger.Fatalf("duplicate service(%s) in node(%s) config", s, name)
+					return NewError(ErrInvalidArgument, "duplicate service in node config")
 				}
 
 				Config.CurNodeMap[s] = true
@@ -94,13 +93,13 @@ func (ss *Node) initOptions() {
 	var err error
 	ss.tcpListener, err = net.Listen("tcp4", curHost+":"+strconv.Itoa(curPort))
 	if err != nil {
-		panic(fmt.Sprintf("node tcp listen at port %v failed: %+v", curPort, err))
+		return WrapError(ErrTransport, "node.initOptions.net.Listen", err)
 	}
 
 	listenConfig := &net.ListenConfig{KeepAlive: time.Duration(ss.nodeOpt.HttpKeepAliveSeconds) * time.Second}
 	ss.httpListener, err = listenConfig.Listen(context.Background(), "tcp", curHost+":"+strconv.Itoa(curHttpPort))
 	if err != nil {
-		panic(fmt.Sprintf("node http listen at port %v failed: %+v", curPort, err))
+		return WrapError(ErrTransport, "node.initOptions.listenConfig.Listen", err)
 	}
 
 	lAddr := ss.tcpListener.Addr().(*net.TCPAddr)
@@ -108,9 +107,10 @@ func (ss *Node) initOptions() {
 	Config.CurNodeIP = lAddr.IP.String()
 	Config.CurNodePort = lAddr.Port
 	Config.CurNodeHttpPort = ss.httpListener.Addr().(*net.TCPAddr).Port
+	return nil
 }
 
-func (ss *Node) postInitOptions() {
+func (ss *Node) postInitOptions() error {
 	srv := &fasthttp.Server{
 		IdleTimeout:  time.Duration(ss.nodeOpt.HttpKeepAliveSeconds) * time.Second,
 		ReadTimeout:  time.Duration(ss.nodeOpt.HttpTimeoutSeconds) * time.Second,
@@ -129,11 +129,12 @@ func (ss *Node) postInitOptions() {
 	var err error
 	Config.CurNodeAddr, err = NewNodeAddr(ss.nodeOpt.LocalIP, Config.CurNodePort)
 	if err != nil {
-		panic(fmt.Sprintf("invalid node local ip address: %v", err))
+		return WrapError(ErrInvalidArgument, "node.postInitOptions.NewNodeAddr", err)
 	}
 
 	ss.logger.Infof("tcp listen at %v, http listen at %v, local IP: %v",
 		ss.tcpListener.Addr(), ss.httpListener.Addr(), Config.CurNodeLocalIP)
+	return nil
 }
 
 func (ss *Node) handler(ctx *fasthttp.RequestCtx) {

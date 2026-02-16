@@ -282,7 +282,11 @@ func (ss *Node) Construct(host host.IHost, logger *logging.Logger[Node], nodeOpt
 func (ss *Node) Start(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
 
-	ss.initOptions()
+	if err := ss.initOptions(); err != nil {
+		ss.logger.Errorf("node init options failed: %+v", err)
+		wg.Done()
+		return
+	}
 
 	if ss.regOpt.PostInitializer != nil {
 		ss.regOpt.PostInitializer()
@@ -323,7 +327,15 @@ func (ss *Node) Start(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 		ss.handleRequestMethod(path, http.MethodPost, s.handleHttpRpc)
 	}
 
-	ss.postInitOptions()
+	if err := ss.postInitOptions(); err != nil {
+		ss.logger.Errorf("node post init options failed: %+v", err)
+		_ = ss.tcpListener.Close()
+		if ss.httpListener != nil {
+			_ = ss.httpListener.Close()
+		}
+		wg.Done()
+		return
+	}
 
 	task.Execute(func() {
 		for _, service := range services {
@@ -483,7 +495,7 @@ func NewService(name string) (int32, error) {
 func newService(name string) (int32, error) {
 	info := gNode.name2Info[name]
 	if info == nil {
-		return 0, fmt.Errorf("service proto kind(%s) is not registered", name)
+		return 0, NewError(ErrServiceNotFound, fmt.Sprintf("service proto kind(%s) is not registered", name))
 	}
 
 	kind := info.Kind

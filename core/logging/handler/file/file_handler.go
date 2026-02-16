@@ -171,6 +171,7 @@ func (ss *Handler) Log(logData *logging.LogData) {
 			File:     fn,
 			Line:     ln,
 			Level:    d.Level,
+			ErrorCode: d.ErrorCode,
 			Custom:   d.Custom,
 			Message:  d.Message,
 		}

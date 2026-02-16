@@ -28,10 +28,12 @@ func (ss *DefaultLogger) log(level Level, format string, args ...any) {
 		Time:  time.Now(),
 		Path:  ss.path,
 		Level: level,
+		Custom: args,
 		Message: func() string {
 			return fmt.Sprintf(format, args...)
 		},
 	}
+	logData.ErrorCode = ExtractErrorCode(args)
 	if GlobalLogDataBuilder != nil {
 		GlobalLogDataBuilder(logData)
 	}

@@ -32,6 +32,11 @@ type message struct {
 	data    []byte           // remote call: not nil; local call: nil(marshal not needed)
 }
 
+type wireError struct {
+	Code ErrorCode `json:"code"`
+	Msg  string    `json:"msg"`
+}
+
 func (ss *message) marshalArgs(args []reflect.Value) ([]byte, error) {
 	mArgs := make([]any, 0, len(args))
 	for _, arg := range args {
@@ -40,7 +45,7 @@ func (ss *message) marshalArgs(args []reflect.Value) ([]byte, error) {
 
 	bs, err := xjson.Marshal(mArgs)
 	if err != nil {
-		return nil, err
+		return nil, WrapError(ErrCodec, "message.marshalArgs", err)
 	}
 	return bs, nil
 }
@@ -51,7 +56,7 @@ func (ss *message) unmarshalArgs(bs []byte, argI int, ft reflect.Type) ([]reflec
 		tArgs = append(tArgs, reflect.New(ft.In(i)).Interface())
 	}
 	if err := xjson.Unmarshal(bs, &tArgs); err != nil {
-		return nil, err
+		return nil, WrapError(ErrCodec, "message.unmarshalArgs", err)
 	}
 	ret := make([]reflect.Value, 0, len(tArgs))
 	for i, arg := range tArgs {
@@ -76,7 +81,14 @@ func (ss *message) marshal() ([]byte, error) {
 	if ss.err != nil { // error
 		// 若存在错误，则 data 中是错误的信息
 
-		errBytes := []byte(fmt.Sprintf("%+v", ss.err))
+		we := wireError{
+			Code: CodeOf(ss.err),
+			Msg:  ss.err.Error(),
+		}
+		errBytes, err := xjson.Marshal(we)
+		if err != nil {
+			errBytes = []byte(fmt.Sprintf(`{"code":"%s","msg":"%s"}`, ErrUnknown, ss.err.Error()))
+		}
 		ss.data = make([]byte, messageHeaderLen+len(errBytes))
 		copy(ss.data[messageHeaderLen:], errBytes)
 	} else if len(ss.fName) > 0 { // request
@@ -86,7 +98,7 @@ func (ss *message) marshal() ([]byte, error) {
 		lof := len(ss.fName)
 		bs, err := ss.marshalArgs(ss.args)
 		if err != nil {
-			return nil, err
+			return nil, WrapError(ErrCodec, "message.marshal.request", err)
 		}
 		ss.args = nil
 
@@ -99,7 +111,7 @@ func (ss *message) marshal() ([]byte, error) {
 
 		bs, err := ss.marshalArgs(ss.args)
 		if err != nil {
-			return nil, err
+			return nil, WrapError(ErrCodec, "message.marshal.response", err)
 		}
 		ss.args = nil
 
@@ -127,7 +139,7 @@ func (ss *message) unmarshal(bytes []byte) error {
 	}
 
 	if bl < messageHeaderLen {
-		return fmt.Errorf("message decode length expected >= %d, got %d", messageHeaderLen, bl)
+		return NewError(ErrCodec, fmt.Sprintf("message decode length expected >= %d, got %d", messageHeaderLen, bl))
 	}
 
 	// bytes[:4] is length that must be checked before decode
@@ -147,7 +159,20 @@ func (ss *message) getError() error {
 	if ss.err != nil {
 		return ss.err
 	}
-	return fmt.Errorf("%s", string(ss.data[messageHeaderLen:]))
+
+	var we wireError
+	payload := ss.data[messageHeaderLen:]
+	if err := xjson.Unmarshal(payload, &we); err == nil && we.Code != "" {
+		return &Error{
+			Code: we.Code,
+			Msg:  we.Msg,
+		}
+	}
+
+	return &Error{
+		Code: ErrUnknown,
+		Msg:  string(payload),
+	}
 }
 
 func (ss *message) writeRequest(fName string, args []any) {
@@ -159,11 +184,11 @@ func (ss *message) writeRequest(fName string, args []any) {
 
 func (ss *message) getRequestFuncLen() (int, error) {
 	if len(ss.data) < messageHeaderLen+2 {
-		return 0, fmt.Errorf("getRequestFuncLen: message length < %d: %d", messageHeaderLen+2, len(ss.data))
+		return 0, NewError(ErrCodec, fmt.Sprintf("getRequestFuncLen: message length < %d: %d", messageHeaderLen+2, len(ss.data)))
 	}
 	lof := int(binary.LittleEndian.Uint16(ss.data[messageHeaderLen:]))
 	if len(ss.data) < messageHeaderLen+lof {
-		return 0, fmt.Errorf("getRequestFuncLen: message length < %d: %d", messageHeaderLen+lof, len(ss.data))
+		return 0, NewError(ErrCodec, fmt.Sprintf("getRequestFuncLen: message length < %d: %d", messageHeaderLen+lof, len(ss.data)))
 	}
 	return lof, nil
 }
@@ -195,7 +220,7 @@ func (ss *message) getRequestFuncArgs(ft reflect.Type) ([]reflect.Value, error) 
 
 	args, err := ss.unmarshalArgs(bs, 2, ft)
 	if err != nil {
-		return nil, err
+		return nil, WrapError(ErrCodec, "message.getRequestFuncArgs", err)
 	}
 	return args, nil
 }
@@ -224,7 +249,7 @@ func (ss *message) getResponse(ft reflect.Type) ([]reflect.Value, error) {
 	bs := ss.data[messageHeaderLen:]
 	args, err := ss.unmarshalArgs(bs, 0, ft)
 	if err != nil {
-		return nil, err
+		return nil, WrapError(ErrCodec, "message.getResponse", err)
 	}
 	return args, nil
 }

@@ -35,17 +35,25 @@
 
 ### 3.2 统一错误模型（错误码 + 包装）
 
-**现状**
-- 部分路径依赖 panic/recover，错误语义不稳定。
+**当前进展（已落地：基础版）**
+- 已在 `routines/node` 增加统一错误模型：`ErrorCode` + `Error` 包装（支持 `errors.Is/As`）。
+- 已定义核心错误码：`ErrTimeout`、`ErrServiceNotFound`、`ErrCodec`、`ErrTransport`、`ErrCancelled`、`ErrInvalidArgument`、`ErrInternal`。
+- 已接入关键路径：
+  - `proxy.go`：请求超时、取消、服务不存在等统一为带错误码的错误。
+  - `proxy_http.go`：HTTP 传输/编解码错误统一包装。
+  - `message.go`：错误序列化改为结构化 `code + msg`，远端可还原错误码。
+  - `config.go` / `node.go`：启动阶段关键错误由返回 `error` 处理，减少对 `panic` 的依赖。
+  - `handle.go`：连接断开、远端超时等统一错误码。
 
-**改进建议**
-- 定义统一错误码（例如：`ErrTimeout`、`ErrServiceNotFound`、`ErrCodec`、`ErrTransport`）。
-- 约定 RPC 返回中错误优先通过 `error` 显式表达，`ctx.Error()` 作为兼容层。
-- 对外暴露 `Is/As` 友好的错误包装结构。
+**兼容策略**
+- RPC 仍保持 `ctx.Error(err)` 作为兼容层；推荐新代码使用显式 `error` 并附带 `ErrorCode`。
 
-**验收标准**
-- 线上告警可按错误码聚合统计。
-- 主要异常路径不依赖 panic 才能返回错误。
+**验收结果（当前）**
+- 线上日志/告警已具备按错误码聚合条件（已支持独立 `error_code` 字段，无需从错误字符串解析）。
+- 主要异常路径已不依赖 `panic` 才能返回错误（初始化与 RPC 关键链路已覆盖）。
+
+**后续增强（待办）**
+- 将 `panic/recover` 保护块的输出也统一映射为结构化错误码。
 
 ### 3.3 优雅停机（Drain 模式）
 

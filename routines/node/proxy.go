@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"runtime/debug"
 	"sync"
@@ -14,11 +13,11 @@ const (
 )
 
 var (
-	ErrServiceNotExist      = fmt.Errorf("service not exist")
-	ErrNodeMessageChanFull  = fmt.Errorf("note message chan full")
-	ErrRequestTimeoutRemote = fmt.Errorf("session timeout from remote")
-	ErrRequestTimeoutLocal  = fmt.Errorf("session timeout from local")
-	ErrRequestCancelled     = fmt.Errorf("request cancelled by context")
+	ErrServiceNotExist      = NewError(ErrServiceNotFound, "service not exist")
+	ErrNodeMessageChanFull  = NewError(ErrTransport, "node message channel full")
+	ErrRequestTimeoutRemote = NewError(ErrTimeout, "session timeout from remote")
+	ErrRequestTimeoutLocal  = NewError(ErrTimeout, "session timeout from local")
+	ErrRequestCancelled     = NewError(ErrCancelled, "request cancelled by context")
 )
 
 type iProxy interface {

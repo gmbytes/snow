@@ -61,6 +61,10 @@ func DefaultLogFormatter(logData *LogData) string {
 	if len(logData.File) != 0 {
 		sb.WriteString(fmt.Sprintf(" %s(%d)", logData.File, logData.Line))
 	}
+	if len(logData.ErrorCode) != 0 {
+		sb.WriteString(" error_code=")
+		sb.WriteString(logData.ErrorCode)
+	}
 	sb.WriteString(" ")
 	sb.WriteString(logData.Message())
 	return sb.String()
@@ -104,6 +108,10 @@ func ColorLogFormatter(logData *LogData) string {
 
 	if len(logData.File) != 0 {
 		sb.WriteString(fmt.Sprintf(" %s(%d)", logData.File, logData.Line))
+	}
+	if len(logData.ErrorCode) != 0 {
+		sb.WriteString(" error_code=")
+		sb.WriteString(logData.ErrorCode)
 	}
 	sb.WriteString(" ")
 	sb.WriteString(logData.Message())
