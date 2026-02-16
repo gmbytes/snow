@@ -34,7 +34,9 @@ func Inject(scope injection.IRoutineScope, instance any) bool {
 					argInstance = repo.GetOptionWrapper(argTy)
 				case argTy.ConvertibleTo(loggerContainerType):
 					ch := injection.GetRoutine[*handler.RootHandler](scope.GetRoot().GetProvider())
-					argInstance = ch.WrapToContainer(argTy)
+					if ch != nil {
+						argInstance = ch.WrapToContainer(argTy)
+					}
 				default:
 					argInstance = scope.GetProvider().GetRoutine(argTy)
 				}

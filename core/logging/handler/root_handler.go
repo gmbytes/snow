@@ -26,9 +26,22 @@ func (ss *RootHandler) Log(data *logging.LogData) {
 }
 
 func (ss *RootHandler) WrapToContainer(ty reflect.Type) any {
-	keyTy := ty.Elem().Field(0).Type
+	if ty == nil {
+		return nil
+	}
+	
+	elemTy := ty.Elem()
+	if elemTy.Kind() != reflect.Struct {
+		return nil
+	}
+	
+	if elemTy.NumField() == 0 {
+		return nil
+	}
+	
+	keyTy := elemTy.Field(0).Type
 
-	instanceValue := reflect.New(ty.Elem())
+	instanceValue := reflect.New(elemTy)
 	instance := instanceValue.Interface()
 
 	fieldValue := reflect.ValueOf(ss)

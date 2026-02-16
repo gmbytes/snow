@@ -64,7 +64,7 @@ func (ss *writer) loop(c <-chan *writerElement) {
 
 		ss.fileName = unit.File
 
-		if !ss.compress || len(ss.fileName) == 0 {
+		if !ss.compress || len(previousName) == 0 {
 			continue
 		}
 

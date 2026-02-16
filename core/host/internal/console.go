@@ -26,10 +26,12 @@ type ConsoleLifetimeRoutine struct {
 
 func (ss *ConsoleLifetimeRoutine) Construct(application host.IHostApplication, logger *logging.Logger[ConsoleLifetimeRoutine]) {
 	ss.application = application
-	ss.logger = logger.Get(func(data *logging.LogData) {
-		data.Name = "ConsoleLifetime"
-		data.ID = fmt.Sprintf("%X", unsafe.Pointer(ss))
-	})
+	if logger != nil {
+		ss.logger = logger.Get(func(data *logging.LogData) {
+			data.Name = "ConsoleLifetime"
+			data.ID = fmt.Sprintf("%X", unsafe.Pointer(ss))
+		})
+	}
 }
 
 func (ss *ConsoleLifetimeRoutine) Start(_ context.Context, wg *xsync.TimeoutWaitGroup) {

@@ -103,7 +103,21 @@ func (ss *Handler) Log(logData *logging.LogData) {
 	}
 
 	if len(logData.File) == 0 && int(logData.Level) >= curOption.FileLineLevel {
-		_, fn, ln, _ := runtime.Caller(curOption.FileLineSkip)
+		// 安全调用 runtime.Caller，防止 skip 值过大导致 panic
+		skip := curOption.FileLineSkip
+		if skip < 0 {
+			skip =20
+		}
+		if skip > 20 { // 限制最大 skip 值，防止超出调用栈
+			skip = 20
+		}
+		pc, fn, ln, ok := runtime.Caller(skip)
+		if !ok {
+			// 如果 Caller 失败，使用原始 logData
+			fn = ""
+			ln = 0
+		}
+		_ = pc // 避免未使用变量警告
 		d := logData
 		logData = &logging.LogData{
 			Time:     d.Time,

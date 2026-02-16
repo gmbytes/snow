@@ -27,9 +27,19 @@ import (
 	"github.com/gmbytes/snow/core/option"
 	"github.com/gmbytes/snow/core/task"
 	"github.com/gmbytes/snow/core/ticker"
+	"github.com/gmbytes/snow/core/version"
 	"github.com/gmbytes/snow/core/xnet"
 	"github.com/gmbytes/snow/core/xsync"
 )
+
+type NodeInfo struct {
+	Uid     int64            `json:"uid"`
+	Sid     int64            `json:"sid"`
+	Name    string           `json:"name"`
+	Host    string           `json:"host"`
+	Port    int              `json:"port"`
+	Version *version.Version `json:"version"`
+}
 
 const TickInterval = 5 * time.Millisecond
 

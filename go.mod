@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/arl/assertgo v0.0.0-20180702120748-a1be5afdc871
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.1
 	github.com/panjf2000/ants/v2 v2.11.3
