@@ -1,14 +1,9 @@
 package node
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/gmbytes/snow/core/debug"
-	"github.com/gmbytes/snow/core/logging"
-	"github.com/gmbytes/snow/core/task"
-	"github.com/gmbytes/snow/core/ticker"
-	"github.com/gmbytes/snow/core/xjson"
-	"github.com/valyala/fasthttp"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -17,6 +12,13 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/gmbytes/snow/core/debug"
+	"github.com/gmbytes/snow/core/logging"
+	"github.com/gmbytes/snow/core/task"
+	"github.com/gmbytes/snow/core/ticker"
+	"github.com/gmbytes/snow/core/xjson"
+	"github.com/valyala/fasthttp"
 )
 
 var _ iService = (*Service)(nil)
@@ -44,6 +46,8 @@ type tagFunc struct {
 
 type Service struct {
 	node *Node
+	ctx  context.Context
+	ctxCancel context.CancelFunc
 
 	methodMap     map[string]reflect.Value
 	httpMethodMap map[string]reflect.Value
@@ -262,7 +266,6 @@ func (ss *Service) CreateHttpProxy(httpUrl, name string) IProxy {
 		srv: ss,
 		url: res,
 		httpClient: &http.Client{
-			Timeout:   time.Second * 8,
 			Transport: tr,
 		},
 	}
@@ -310,6 +313,7 @@ func (ss *Service) init(node *Node, name string, kind int32, sAddr int32,
 	realService iService, methodMap map[string]reflect.Value, httpMethodMap map[string]reflect.Value) {
 
 	ss.node = node
+	ss.ctx, ss.ctxCancel = context.WithCancel(node.ctx)
 	ss.name = name
 	ss.loggerPath = "Service/" + name
 	ss.kind = kind
@@ -400,6 +404,11 @@ func (ss *Service) stop() {
 		return
 	}
 
+	// 取消 Service 生命周期 Context，所有由此 Service 发起的 RPC 将快速退出
+	if ss.ctxCancel != nil {
+		ss.ctxCancel()
+	}
+
 	// 这里开始退出流程，当前还未处于关闭状态
 	isStandalone := Config.CurNodeMap[ss.name]
 	if isStandalone {
@@ -449,6 +458,8 @@ func (ss *Service) stop() {
 	ss.fork("", nil)
 
 	ss.node = nil
+	ss.ctx = nil
+	ss.ctxCancel = nil
 
 	ss.methodMap = nil
 	ss.httpMethodMap = nil
@@ -542,6 +553,14 @@ func (ss *Service) doDispatch(mReq *message) {
 		return
 	}
 
+	// 派生本次 RPC 的 Context：
+	//   - 本地调用：继承调用方通过 message 传递的 Context（含超时/取消信息）
+	//   - 远程调用：message.ctx 为 nil，使用 context.Background()
+	parentCtx := mReq.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
 	mRsp := &message{
 		nAddr: mReq.nAddr,
 		src:   ss.sAddr,
@@ -564,7 +583,7 @@ func (ss *Service) doDispatch(mReq *message) {
 			}
 		}
 
-		ctx := newRpcContext(ss, mRsp, mReq.sess, mReq.src, mReq.nAddr, mReq.cb, cb)
+		ctx := newRpcContext(parentCtx, ss, mRsp, mReq.sess, mReq.src, mReq.nAddr, mReq.cb, cb)
 		if ss.delayedRpc == nil || ss.allowedRpc[funcName] {
 			ss.entry(ctx, funcName, mReq.getRequestFuncArgs)
 		} else {
@@ -576,7 +595,7 @@ func (ss *Service) doDispatch(mReq *message) {
 			mc.Histogram("[ServicePost] "+ss.name+"::"+funcName, float64(dur))
 		}
 	} else {
-		ctx := newRpcContext(ss, mRsp, mReq.sess, mReq.src, mReq.nAddr, mReq.cb, nil)
+		ctx := newRpcContext(parentCtx, ss, mRsp, mReq.sess, mReq.src, mReq.nAddr, mReq.cb, nil)
 		if ss.delayedRpc == nil || ss.allowedRpc[funcName] {
 			ss.entry(ctx, funcName, mReq.getRequestFuncArgs)
 		} else {
@@ -597,11 +616,11 @@ func (ss *Service) entry(ctx IRpcContext, funcName string, argGetter func(ft ref
 	}
 }
 
-func (ss *Service) handleHttpRpc(ctx *fasthttp.RequestCtx) {
+func (ss *Service) handleHttpRpc(fctx *fasthttp.RequestCtx) {
 	ss.httpRpcLock.Lock()
 	if ss.delayedHttpRpc == nil {
 		ss.httpRpcLock.Unlock()
-		ss.httpEntry(ctx)
+		ss.httpEntry(fctx)
 		return
 	}
 
@@ -609,22 +628,25 @@ func (ss *Service) handleHttpRpc(ctx *fasthttp.RequestCtx) {
 	ss.delayedHttpRpc = append(ss.delayedHttpRpc, ch)
 	ss.httpRpcLock.Unlock()
 
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer waitCancel()
+
 	select {
 	case <-ch:
-	case <-time.After(30 * time.Second):
+	case <-waitCtx.Done():
 		res, err := xjson.MarshalToString(&httpResponse{
 			StatusCode: http.StatusRequestTimeout,
 			Result:     xjson.RawMessage("no response from remote service, is 'EnableHttpRpc' called?"),
 		})
 		if err != nil {
-			ctx.Error("http rpc response marshal error", http.StatusInternalServerError)
+			fctx.Error("http rpc response marshal error", http.StatusInternalServerError)
 			return
 		}
 
-		ctx.SuccessString("application/json", res)
+		fctx.SuccessString("application/json", res)
 		return
 	}
-	ss.httpEntry(ctx)
+	ss.httpEntry(fctx)
 }
 
 func (ss *Service) httpEntry(ctx *fasthttp.RequestCtx) {
@@ -704,7 +726,6 @@ func (ss *Service) createProxy(updater *AddrUpdater, nAddr Addr, sAddr int32, na
 			srv: ss,
 			url: res,
 			httpClient: &http.Client{
-				Timeout:   time.Second * 8,
 				Transport: tr,
 			},
 		}
@@ -762,7 +783,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 	if !hc.Post {
 		ch = make(chan *httpResponse, 1)
 	}
-	httpRpcCtx := newHttpRpcContext(ch)
+	httpRpcCtx := newHttpRpcContext(context.Background(), ch)
 	rArgs := make([]reflect.Value, 0, ft.NumIn())
 	rArgs = append(rArgs, reflect.ValueOf(srv.realSrv))
 	rArgs = append(rArgs, reflect.ValueOf(IRpcContext(httpRpcCtx)))

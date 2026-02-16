@@ -1,8 +1,13 @@
 package node
 
+import "context"
+
 var _ = (IRpcContext)((*rpcContext)(nil))
 
 type rpcContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	reqSess     int32
 	reqSrc      int32
 	reqCb       func(m *message)
@@ -14,8 +19,12 @@ type rpcContext struct {
 	flushCb func()
 }
 
-func newRpcContext(srv *Service, mRsp *message, reqSess, reqSrc int32, reqNodeAddr Addr, reqCb func(m *message), flushCb func()) *rpcContext {
+func newRpcContext(parentCtx context.Context, srv *Service, mRsp *message, reqSess, reqSrc int32, reqNodeAddr Addr, reqCb func(m *message), flushCb func()) *rpcContext {
+	ctx, cancel := context.WithCancel(parentCtx)
 	return &rpcContext{
+		ctx:    ctx,
+		cancel: cancel,
+
 		reqSess:     reqSess,
 		reqSrc:      reqSrc,
 		reqNodeAddr: reqNodeAddr,
@@ -25,6 +34,10 @@ func newRpcContext(srv *Service, mRsp *message, reqSess, reqSrc int32, reqNodeAd
 		srv:     srv,
 		flushCb: flushCb,
 	}
+}
+
+func (ss *rpcContext) Context() context.Context {
+	return ss.ctx
 }
 
 func (ss *rpcContext) GetRemoteNodeAddr() INodeAddr {
@@ -58,6 +71,12 @@ func (ss *rpcContext) flush() {
 		return
 	}
 	ss.flushed = true
+
+	// 响应已发送，取消本次 RPC 关联的 Context，释放派生资源
+	if ss.cancel != nil {
+		ss.cancel()
+	}
+
 	if ss.flushCb != nil {
 		ss.flushCb()
 	}

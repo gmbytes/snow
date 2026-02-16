@@ -2,16 +2,22 @@ package node
 
 import (
 	"bytes"
+	"context"
 	"fmt"
-	"github.com/gmbytes/snow/core/task"
-	"github.com/gmbytes/snow/core/xjson"
 	"io"
 	"net/http"
 	"reflect"
 	"runtime/debug"
+	"time"
+
+	"github.com/gmbytes/snow/core/task"
+	"github.com/gmbytes/snow/core/xjson"
 )
 
-const httpRpcPathPrefix = "/node/rpc/"
+const (
+	httpRpcPathPrefix  = "/node/rpc/"
+	defaultHTTPTimeout = 8 * time.Second
+)
 
 type httpRequest struct {
 	Func string           `json:"Func"`
@@ -20,7 +26,7 @@ type httpRequest struct {
 }
 
 type httpResponse struct {
-	StatusCode int            `json:"-"`
+	StatusCode int              `json:"-"`
 	Result     xjson.RawMessage `json:"Result"`
 }
 
@@ -52,7 +58,27 @@ func (ss *httpProxy) onError(p *promise, err error) {
 }
 
 func (ss *httpProxy) doCall(p *promise) {
+	// 确定父 Context：显式传入 > Service 生命周期 > Background
+	parentCtx := p.ctx
+	if parentCtx == nil {
+		parentCtx = ss.srv.ctx
+	}
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
+	// 统一从 Context 派生超时：若调用方未设置 deadline，施加默认超时
+	var reqCtx context.Context
+	var reqCancel context.CancelFunc
+	if _, ok := parentCtx.Deadline(); ok {
+		reqCtx, reqCancel = context.WithCancel(parentCtx)
+	} else {
+		reqCtx, reqCancel = context.WithTimeout(parentCtx, defaultHTTPTimeout)
+	}
+
 	task.Execute(func() {
+		defer reqCancel()
+
 		argsStr, err := xjson.Marshal(p.args)
 		if err != nil {
 			ss.onError(p, err)
@@ -65,17 +91,16 @@ func (ss *httpProxy) doCall(p *promise) {
 			Args: argsStr,
 		}
 
-		var httpClient *http.Client
-		if p.timeout == -1 {
-			httpClient = ss.httpClient
-		} else {
-			c := *ss.httpClient
-			httpClient = &c
-			httpClient.Timeout = p.timeout
-		}
-
 		bs, _ := xjson.Marshal(req)
-		resp, err := httpClient.Post(ss.url, "application/json", bytes.NewBuffer(bs))
+		httpReq, err := http.NewRequestWithContext(reqCtx, "POST", ss.url, bytes.NewBuffer(bs))
+		if err != nil {
+			ss.onError(p, err)
+			return
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Transport: ss.httpClient.Transport}
+		resp, err := client.Do(httpReq)
 		if err != nil {
 			ss.onError(p, err)
 			return

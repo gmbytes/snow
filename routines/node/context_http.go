@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gmbytes/snow/core/xjson"
@@ -9,14 +10,24 @@ import (
 var _ IRpcContext = (*httpRpcContext)(nil)
 
 type httpRpcContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	ch   chan *httpResponse
 	errF func(error)
 }
 
-func newHttpRpcContext(ch chan *httpResponse) *httpRpcContext {
+func newHttpRpcContext(parentCtx context.Context, ch chan *httpResponse) *httpRpcContext {
+	ctx, cancel := context.WithCancel(parentCtx)
 	return &httpRpcContext{
-		ch: ch,
+		ctx:    ctx,
+		cancel: cancel,
+		ch:     ch,
 	}
+}
+
+func (ss *httpRpcContext) Context() context.Context {
+	return ss.ctx
 }
 
 func (ss *httpRpcContext) GetRemoteNodeAddr() INodeAddr {
@@ -33,6 +44,10 @@ func (ss *httpRpcContext) Catch(f func(error)) IRpcContext {
 }
 
 func (ss *httpRpcContext) Return(args ...any) {
+	if ss.cancel != nil {
+		ss.cancel()
+	}
+
 	if ss.ch == nil {
 		return
 	}
@@ -56,6 +71,10 @@ func (ss *httpRpcContext) Return(args ...any) {
 }
 
 func (ss *httpRpcContext) Error(err error) {
+	if ss.cancel != nil {
+		ss.cancel()
+	}
+
 	if ss.ch == nil {
 		return
 	}

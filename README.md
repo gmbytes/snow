@@ -10,7 +10,8 @@
 - **日志系统**：分层设计（Logger → Handler → Formatter），支持控制台彩色输出、文件滚动、zstd 压缩
 - **生命周期管理**：Routine 的完整生命周期（BeforeStart → Start → AfterStart → BeforeStop → Stop → AfterStop）
 - **高效调度**：goroutine 池（ants）、多 Worker 定时器池、三级时间轮
-- **Promise 异步模型**：链式调用，支持 Then / Catch / Final / Timeout
+- **Promise 异步模型**：链式调用，支持 Then / Catch / Final / WithContext
+- **Context 全链路传播**：RPC 超时、取消、Trace 统一由 `context.Context` 驱动，Service 停止时自动取消所有进行中的 RPC
 
 ## 架构概览
 
@@ -144,6 +145,11 @@ func (s *ping) Start(arg []byte) {
             Then(func(reply string) { slog.Infof("reply: %s", reply) }).
             Catch(func(err error) { slog.Errorf("error: %v", err) }).
             Done()
+
+        // 自定义超时示例：
+        // ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        // defer cancel()
+        // proxy.Call("Hello", "test").WithContext(ctx).Then(...).Done()
     })
 }
 ```
@@ -245,10 +251,58 @@ TCP 二进制协议：
 
 ```go
 proxy := s.CreateProxy("TargetService")
+
+// 基本调用 —— 自动继承 Service 生命周期 Context，默认 30s 超时
 proxy.Call("MethodName", arg1, arg2).
     Then(func(result string) { /* 处理结果 */ }).
-    Timeout(5 * time.Second).
     Done()
+
+// 自定义超时 —— 通过 context.WithTimeout 控制
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+proxy.Call("MethodName", arg1).WithContext(ctx).
+    Then(func(result string) { /* 处理结果 */ }).
+    Done()
+```
+
+#### Context 全链路传播
+
+RPC 的超时与取消统一由 `context.Context` 驱动，无多套 timeout 机制并存：
+
+```
+Service.ctx (Node.ctx 派生)
+    └─ proxy.doCall 默认父级
+         └─ message.ctx 传递到被调方
+              └─ IRpcContext.Context() 暴露给 Handler
+                   └─ handler 可传递给下游 RPC / DB / HTTP
+```
+
+**三级 Context 回退**：`WithContext(ctx)` 显式传入 → `Service.ctx` 生命周期 → `context.Background()`
+
+**调用方**无需改动，自动获得 context 能力：
+```go
+// 日常调用：自动继承 Service context，Service 停止时所有 RPC 立即取消
+proxy.Call("Hello", "ping").Then(func(ret string) { ... }).Done()
+```
+
+**被调方** Handler 签名不变，可选使用 `ctx.Context()`：
+```go
+func (s *pong) RpcHello(ctx node.IRpcContext, msg string) {
+    // ctx.Context() 可传给 DB、HTTP、下游 RPC 等需要 context 的操作
+    result, err := db.QueryContext(ctx.Context(), "SELECT ...")
+    ctx.Return(result)
+}
+```
+
+**链路传播**：上游取消 → 下游自动取消：
+```go
+func (s *myService) RpcProcess(rpcCtx node.IRpcContext, data string) {
+    s.downstream.Call("Work", data).
+        WithContext(rpcCtx.Context()).  // 继承上游 context
+        Then(func(r string) { rpcCtx.Return(r) }).
+        Catch(func(err error) { rpcCtx.Error(err) }).
+        Done()
+}
 ```
 
 ### 5. 时间轮 (`routines/node/timewheel`)
@@ -329,17 +383,16 @@ Node:
 
 ### 一、架构层面
 
-#### 1. 引入 Context 传播机制
+#### 1. ~~引入 Context 传播机制~~ (已实现)
 
-当前 RPC 调用缺乏标准的 `context.Context` 传播。建议在 `IRpcContext` 中集成 `context.Context`，支持跨服务的超时传播、取消信号传递和链路追踪：
+已完成 RPC 全链路 `context.Context` 传播：
 
-```go
-type IRpcContext interface {
-    Context() context.Context  // 新增
-    Return(args ...any)
-    Error(err error)
-}
-```
+- `IRpcContext` 新增 `Context() context.Context`，Handler 可获取关联 Context
+- `IPromise` 新增 `WithContext(ctx)` 用于显式绑定 Context（自定义超时 / 上游取消传播）
+- `Service` 拥有生命周期 Context（从 `Node.ctx` 派生），停止时自动取消所有进行中的 RPC
+- 超时统一由 `context.WithTimeout` 控制，移除原有 `Timeout()` / `srv.After()` / `http.Client.Timeout` 多套机制
+- 调用方三级回退：`WithContext(ctx)` → `Service.ctx` → `context.Background()`
+- 本地 RPC 通过 `message.ctx` 传递 Context，远程 RPC 使用 `context.Background()` 兜底
 
 #### 2. 错误处理标准化
 

@@ -1,10 +1,16 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"sync"
 	"time"
+)
+
+const (
+	defaultTCPTimeout = 30 * time.Second
 )
 
 var (
@@ -12,6 +18,7 @@ var (
 	ErrNodeMessageChanFull  = fmt.Errorf("note message chan full")
 	ErrRequestTimeoutRemote = fmt.Errorf("session timeout from remote")
 	ErrRequestTimeoutLocal  = fmt.Errorf("session timeout from local")
+	ErrRequestCancelled     = fmt.Errorf("request cancelled by context")
 )
 
 type iProxy interface {
@@ -69,13 +76,29 @@ func (ss *serviceProxy) doCall(p *promise) {
 		return
 	}
 
-	if p.timeout == -1 {
-		p.timeout = 30 * time.Second
-	}
 	srv := ss.srv
 
+	// 确定父 Context：显式传入 > Service 生命周期 > Background
+	parentCtx := p.ctx
+	if parentCtx == nil {
+		parentCtx = srv.ctx
+	}
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
+	// 统一从 Context 派生超时：若调用方未设置 deadline，施加默认超时
+	var callCtx context.Context
+	var callCancel context.CancelFunc
+	if _, ok := parentCtx.Deadline(); ok {
+		callCtx, callCancel = context.WithCancel(parentCtx)
+	} else {
+		callCtx, callCancel = context.WithTimeout(parentCtx, defaultTCPTimeout)
+	}
+
 	m := &message{
-		timeout: p.timeout,
+		ctx:     callCtx,
+		timeout: timeoutFromContext(callCtx),
 		src:     srv.GetAddr(),
 		dst:     ss.sAddr,
 		// TODO trace id
@@ -90,6 +113,7 @@ func (ss *serviceProxy) doCall(p *promise) {
 		ss.sender = nodeGetMessageSender(ss.GetNodeAddr().(Addr), ss.sAddr, true, ch)
 	}
 	if ss.sender == nil {
+		callCancel()
 		if p.errCb != nil {
 			srv.Fork("proxy.err.cb", func() {
 				p.errCb(ErrServiceNotExist)
@@ -110,6 +134,7 @@ func (ss *serviceProxy) doCall(p *promise) {
 	}
 
 	if p.successCb == nil {
+		callCancel()
 		if p.finalCb != nil {
 			srv.Fork("proxy.post.finalCb", func() {
 				p.finalCb()
@@ -121,23 +146,33 @@ func (ss *serviceProxy) doCall(p *promise) {
 	} else {
 		sess := nodeGenSessionID()
 		trace := m.trace
+
+		// sync.Once 保证回调仅执行一次，消除正常响应与超时/取消竞态
+		var cbOnce sync.Once
 		cb := func(mm *message) {
-			ss.callThen(mm, srv, p, sess)
+			cbOnce.Do(func() {
+				callCancel()
+				ss.callThen(mm, srv, p, sess)
+			})
 		}
 		m.cb = cb
 		m.sess = sess
-		timeout := p.timeout
-		if timeout > 0 {
-			srv.Fork("proxy.timeoutCallBack", func() {
-				srv.After(timeout, func() {
-					om := &message{
-						trace: trace,
-						err:   ErrRequestTimeoutLocal,
-					}
-					cb(om)
-				})
-			})
-		}
+
+		// 唯一超时/取消监听：全部由 Context 驱动
+		go func() {
+			<-callCtx.Done()
+			err := callCtx.Err()
+			if err == context.DeadlineExceeded {
+				err = ErrRequestTimeoutLocal
+			} else {
+				err = ErrRequestCancelled
+			}
+			om := &message{
+				trace: trace,
+				err:   err,
+			}
+			cb(om)
+		}()
 	}
 
 	ss.sender.send(m)
@@ -145,11 +180,6 @@ func (ss *serviceProxy) doCall(p *promise) {
 
 func (ss *serviceProxy) callThen(mm *message, srv *Service, p *promise, sess int32) {
 	srv.Fork("proxy.forkCb", func() {
-		if p.timeout == -1 {
-			return
-		}
-		p.timeout = -1
-
 		defer func() {
 			if p.finalCb != nil {
 				p.finalCb()
@@ -208,4 +238,14 @@ func (ss *serviceProxy) callThen(mm *message, srv *Service, p *promise, sess int
 
 		panicked = false
 	})
+}
+
+// timeoutFromContext 从 Context 的 deadline 计算剩余超时时长，无 deadline 返回 0。
+func timeoutFromContext(ctx context.Context) time.Duration {
+	if dl, ok := ctx.Deadline(); ok {
+		if d := time.Until(dl); d > 0 {
+			return d
+		}
+	}
+	return 0
 }

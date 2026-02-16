@@ -1,6 +1,6 @@
 package node
 
-import "time"
+import "context"
 
 var _ IPromise = (*dumbPromise)(nil)
 
@@ -19,7 +19,7 @@ func (ss *dumbPromise) Final(_ func()) IPromise {
 	return ss
 }
 
-func (ss *dumbPromise) Timeout(_ time.Duration) IPromise {
+func (ss *dumbPromise) WithContext(_ context.Context) IPromise {
 	return ss
 }
 
@@ -32,8 +32,8 @@ func _emptyThen() {}
 
 type promise struct {
 	proxy     iProxy
+	ctx       context.Context
 	fName     string
-	timeout   time.Duration
 	args      []any
 	successCb any
 	errCb     func(error)
@@ -42,10 +42,9 @@ type promise struct {
 
 func newPromise(proxy iProxy, fName string, args []any) *promise {
 	return &promise{
-		proxy:   proxy,
-		fName:   fName,
-		timeout: -1,
-		args:    args,
+		proxy: proxy,
+		fName: fName,
+		args:  args,
 	}
 }
 
@@ -67,8 +66,8 @@ func (ss *promise) Final(f func()) IPromise {
 	return ss
 }
 
-func (ss *promise) Timeout(timeout time.Duration) IPromise {
-	ss.timeout = timeout
+func (ss *promise) WithContext(ctx context.Context) IPromise {
+	ss.ctx = ctx
 	return ss
 }
 
@@ -77,6 +76,7 @@ func (ss *promise) Done() {
 }
 
 func (ss *promise) clear() {
+	ss.ctx = nil
 	ss.args = nil
 	ss.successCb = nil
 	ss.errCb = nil

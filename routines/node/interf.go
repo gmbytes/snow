@@ -1,12 +1,15 @@
 package node
 
-import "time"
+import "context"
 
 type IPromise interface {
 	Then(f any) IPromise
 	Catch(f func(error)) IPromise
 	Final(f func()) IPromise
-	Timeout(timeout time.Duration) IPromise
+	// WithContext 绑定显式 Context，覆盖默认的 Service 生命周期 Context。
+	// 用于自定义超时（context.WithTimeout）、上游取消传播、或附加 trace 信息。
+	// 未调用时，框架自动使用发起方 Service 的 Context 作为父级。
+	WithContext(ctx context.Context) IPromise
 	Done()
 }
 
@@ -21,6 +24,9 @@ type ITimeWheelHandle interface {
 }
 
 type IRpcContext interface {
+	// Context 返回本次 RPC 调用关联的 context.Context，
+	// 可用于派生下游调用的超时/取消，或传递 trace 信息。
+	Context() context.Context
 	GetRemoteNodeAddr() INodeAddr
 	GetRemoteServiceAddr() int32
 	Catch(f func(error)) IRpcContext

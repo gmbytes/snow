@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"reflect"
@@ -17,6 +18,7 @@ type iMessageSender interface {
 }
 
 type message struct {
+	ctx     context.Context  // do not marshal, for local context propagation
 	nAddr   Addr             // do not marshal
 	cb      func(m *message) // do not marshal, used by inner node rpc
 	timeout time.Duration    // do not marshal
