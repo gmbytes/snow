@@ -169,6 +169,15 @@ func (ss *remoteHandle) closeAllSession() {
 	})
 }
 
+func (ss *remoteHandle) pendingSessions() int64 {
+	var count int64
+	ss.sessCb.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
 func (ss *remoteHandle) onTick() {
 	zero := time.Time{}
 	now := time.Now()
@@ -361,6 +370,22 @@ func (ss *remoteHandle) doDispatch(m *message) {
 	}
 
 	// request
+	if ss.node != nil && ss.node.IsDraining() {
+		if m.sess > 0 {
+			mm := &message{
+				nAddr: m.nAddr,
+				src:   0,
+				dst:   m.src,
+				sess:  -m.sess,
+				trace: m.trace,
+				err:   NewError(ErrDraining, "node is draining, reject new request"),
+			}
+			ss.send(mm)
+		}
+		m.clear()
+		return
+	}
+
 	srv := nodeGetService(m.dst)
 	if srv != nil {
 		srv.send(m)

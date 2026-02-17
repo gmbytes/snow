@@ -447,6 +447,29 @@ node.RegisterService(b)
 
 `RegisterService` 自动收集所有 `Register` 调用，执行各服务的 setup 回调，并调用 `AddNode` 完成注册。
 
+#### 停机依赖顺序（`ServiceDependencies`）
+
+当启用 Drain 停机时，可在 `RegisterOption` 中声明服务依赖，框架会按依赖关系计算停机顺序（依赖方先停，被依赖方后停）。
+
+```go
+node.AddNode(b, func() *node.RegisterOption {
+    return &node.RegisterOption{
+        ServiceRegisterInfos: []*node.ServiceRegisterInfo{
+            node.CheckedServiceRegisterInfoName[gateway](1, "Gateway"),
+            node.CheckedServiceRegisterInfoName[world](2, "World"),
+            node.CheckedServiceRegisterInfoName[db](3, "DB"),
+        },
+        // A: [B] 表示 A 依赖 B（停机时 A 会先于 B 停止）
+        ServiceDependencies: map[string][]string{
+            "Gateway": {"World"},
+            "World":   {"DB"},
+        },
+    }
+})
+```
+
+若依赖图存在环路，框架会自动回退为历史行为（逆序停机）并输出告警日志。
+
 #### 动态地址管理
 
 `AddrUpdater` 支持运行时动态更新节点地址，适用于服务发现场景：

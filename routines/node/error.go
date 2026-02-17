@@ -15,6 +15,7 @@ const (
 	ErrCodec           ErrorCode = "CODEC"
 	ErrTransport       ErrorCode = "TRANSPORT"
 	ErrCancelled       ErrorCode = "CANCELLED"
+	ErrDraining        ErrorCode = "DRAINING"
 	ErrInvalidArgument ErrorCode = "INVALID_ARGUMENT"
 	ErrInternal        ErrorCode = "INTERNAL"
 )

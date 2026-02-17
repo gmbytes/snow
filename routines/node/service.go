@@ -77,6 +77,7 @@ type Service struct {
 	wg         *sync.WaitGroup
 
 	metricNameFuncPrefix string
+	inFlightRequests     int64
 }
 
 func (ss *Service) Start(_ any) {
@@ -141,6 +142,10 @@ func (ss *Service) GetKind() int32 {
 // GetAddr 获取服务地址，线程安全
 func (ss *Service) GetAddr() int32 {
 	return ss.sAddr
+}
+
+func (ss *Service) InFlightRequests() int64 {
+	return atomic.LoadInt64(&ss.inFlightRequests)
 }
 
 // SetAllowedRPC 设置允许调用的 RPC 函数，不含 "Rpc" 头，非线程安全
@@ -533,7 +538,14 @@ func (ss *Service) doFunc(f *tagFunc) {
 
 func (ss *Service) doDispatch(mReq *message) {
 	var funcName string
+	isRequest := mReq.sess > 0
+	if isRequest {
+		atomic.AddInt64(&ss.inFlightRequests, 1)
+	}
 	defer func() {
+		if isRequest {
+			atomic.AddInt64(&ss.inFlightRequests, -1)
+		}
 		mReq.clear()
 
 		if err := recover(); err != nil {
@@ -745,15 +757,20 @@ func (ss *Service) createProxy(updater *AddrUpdater, nAddr Addr, sAddr int32, na
 }
 
 func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
+	if srv != nil && srv.node != nil && srv.node.IsDraining() {
+		writeHTTPError(ctx, http.StatusServiceUnavailable, NewError(ErrDraining, "node is draining, reject new request"))
+		return
+	}
+
 	var hc httpRequest
 	if err := xjson.Unmarshal(ctx.Request.Body(), &hc); err != nil {
-		ctx.Error("invalid http rpc structure", http.StatusBadRequest)
+		writeHTTPError(ctx, http.StatusBadRequest, WrapError(ErrCodec, "service.processHttpRpc.UnmarshalRequest", err))
 		return
 	}
 
 	f, ok := srv.httpMethodMap[hc.Func]
 	if !ok {
-		ctx.Error("invalid http rpc name", http.StatusBadRequest)
+		writeHTTPError(ctx, http.StatusBadRequest, NewError(ErrServiceNotFound, "invalid http rpc name"))
 		return
 	}
 
@@ -761,7 +778,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 		if r := recover(); r != nil {
 			srv.Errorf("prepare httpRpc(%v) failed: %v\n%v", hc.Func, r, debug.StackInfo())
 
-			ctx.Error("invalid http rpc data", http.StatusBadRequest)
+			writeHTTPError(ctx, http.StatusBadRequest, NewError(ErrInvalidArgument, "invalid http rpc data"))
 		}
 	}()
 
@@ -773,7 +790,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 			args = append(args, reflect.New(ft.In(i)).Interface())
 		}
 		if err := xjson.Unmarshal(hc.Args, &args); err != nil {
-			ctx.Error("invalid http rpc arguments", http.StatusBadRequest)
+			writeHTTPError(ctx, http.StatusBadRequest, WrapError(ErrCodec, "service.processHttpRpc.UnmarshalArgs", err))
 			return
 		}
 		args = args[:ft.NumIn()-2]
@@ -798,7 +815,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 
 				ch <- &httpResponse{
 					StatusCode: http.StatusInternalServerError,
-					Result:     xjson.RawMessage(fmt.Sprintf("internal game logic error")),
+					Result:     xjson.RawMessage("internal game logic error"),
 				}
 			}
 		}()
@@ -817,7 +834,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 		rsp := <-ch
 
 		if rsp.StatusCode != http.StatusOK {
-			ctx.Error(string(rsp.Result), rsp.StatusCode)
+			writeHTTPError(ctx, rsp.StatusCode, NewError(ErrUnknown, string(rsp.Result)))
 			return
 		}
 
@@ -826,7 +843,7 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 			srv.Fork("Service.httpRpcHandler.onError", func() {
 				httpRpcCtx.onError(err)
 			})
-			ctx.Error("http rpc response marshal error", http.StatusInternalServerError)
+			writeHTTPError(ctx, http.StatusInternalServerError, WrapError(ErrCodec, "service.processHttpRpc.MarshalResponse", err))
 			return
 		}
 
@@ -834,4 +851,35 @@ func processHttpRpc(srv *Service, ctx *fasthttp.RequestCtx) {
 	} else {
 		ctx.SuccessString("text/plain", "")
 	}
+}
+
+type rpcHTTPErrorPayload struct {
+	Code string `json:"code"`
+	Msg  string `json:"msg"`
+}
+
+func writeHTTPError(ctx *fasthttp.RequestCtx, status int, err error) {
+	payload := rpcHTTPErrorPayload{
+		Code: string(CodeOf(err)),
+		Msg:  "",
+	}
+	if err != nil {
+		payload.Msg = err.Error()
+	}
+	if payload.Code == "" {
+		payload.Code = string(ErrUnknown)
+	}
+	if payload.Msg == "" {
+		payload.Msg = "unknown error"
+	}
+
+	bs, mErr := xjson.Marshal(payload)
+	if mErr != nil {
+		ctx.Error("http rpc error marshal failed", http.StatusInternalServerError)
+		return
+	}
+
+	ctx.SetStatusCode(status)
+	ctx.SetContentType("application/json")
+	ctx.SetBody(bs)
 }

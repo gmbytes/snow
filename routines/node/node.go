@@ -60,12 +60,15 @@ type Option struct {
 	HttpKeepAliveSeconds int                       `snow:"HttpKeepAliveSeconds"` // 节点 Http 服务保活时间
 	HttpTimeoutSeconds   int                       `snow:"HttpTimeoutSeconds"`   // 节点 Http 服务超时时间
 	HttpDebug            bool                      `snow:"HttpDebug"`            // 节点 Http 是否为调试模式
+	StopDrainTimeoutSec  int                       `snow:"StopDrainTimeoutSec"`  // Drain 等待在途请求最大秒数
+	StopDrainPollMs      int                       `snow:"StopDrainPollMs"`      // Drain 轮询间隔毫秒
 	BootName             string                    `snow:"BootName"`             // 启动节点名
 	Nodes                map[string]*ElementOption `snow:"Nodes"`                // 当前关注的节点信息
 }
 
 type RegisterOption struct {
 	ServiceRegisterInfos     []*ServiceRegisterInfo
+	ServiceDependencies      map[string][]string // key 依赖 value，A:[B] 表示 A 依赖 B
 	ClientHandlePreprocessor xnet.IPreprocessor
 	ServerHandlePreprocessor xnet.IPreprocessor
 	PostInitializer          func()
@@ -160,6 +163,7 @@ type Node struct {
 	remoteHandleTickerCancel context.CancelFunc
 
 	closeWait *sync.WaitGroup
+	draining  int32
 }
 
 func (ss *Node) Construct(host host.IHost, logger *logging.Logger[Node], nodeOpt *option.Option[*Option], registerOpt *option.Option[*RegisterOption]) {
@@ -288,6 +292,16 @@ func (ss *Node) Start(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 		return
 	}
 
+	if err := ss.validateServiceDependencies(Config.CurNodeServices); err != nil {
+		ss.logger.Errorf("node validate service dependencies failed: %+v", err)
+		_ = ss.tcpListener.Close()
+		if ss.httpListener != nil {
+			_ = ss.httpListener.Close()
+		}
+		wg.Done()
+		return
+	}
+
 	if ss.regOpt.PostInitializer != nil {
 		ss.regOpt.PostInitializer()
 	}
@@ -389,10 +403,12 @@ func (ss *Node) startProfileInterface() {
 
 func (ss *Node) Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
+	ss.beginDrain()
+	ss.waitDrain()
 	ss.cancel()
 
-	for i := len(Config.CurNodeServices) - 1; i >= 0; i-- {
-		sn := Config.CurNodeServices[i]
+	stopOrder := ss.resolveStopOrder()
+	for _, sn := range stopOrder {
 		if addr, ok := ss.name2Addr[sn]; ok {
 			swg := &sync.WaitGroup{}
 			swg.Add(1)
@@ -418,6 +434,226 @@ func (ss *Node) Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	ss.closeWait.Wait()
 
 	wg.Done()
+}
+
+func (ss *Node) IsDraining() bool {
+	return atomic.LoadInt32(&ss.draining) == 1
+}
+
+func (ss *Node) beginDrain() {
+	if !atomic.CompareAndSwapInt32(&ss.draining, 0, 1) {
+		return
+	}
+	ss.logger.Infof("node enter drain mode: reject new requests")
+	if ss.tcpListener != nil {
+		_ = ss.tcpListener.Close()
+	}
+	if ss.httpListener != nil {
+		_ = ss.httpListener.Close()
+	}
+}
+
+func (ss *Node) waitDrain() {
+	timeoutSec := ss.nodeOpt.StopDrainTimeoutSec
+	if timeoutSec <= 0 {
+		timeoutSec = 8
+	}
+	pollMs := ss.nodeOpt.StopDrainPollMs
+	if pollMs <= 0 {
+		pollMs = 100
+	}
+
+	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
+	ticker := time.NewTicker(time.Duration(pollMs) * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		totalReq, perService, pendingSessions := ss.collectDrainStats()
+		if totalReq == 0 && pendingSessions == 0 {
+			ss.logger.Infof("drain completed: in_flight_requests=0 pending_sessions=0")
+			return
+		}
+
+		if time.Now().After(deadline) {
+			ss.logger.Warnf(
+				"drain timeout: remaining_requests=%d pending_sessions=%d detail=%v",
+				totalReq,
+				pendingSessions,
+				perService,
+			)
+			return
+		}
+
+		<-ticker.C
+	}
+}
+
+func (ss *Node) collectDrainStats() (int64, map[string]int64, int64) {
+	perService := make(map[string]int64, len(ss.name2Addr))
+	var totalReq int64
+	for name, addr := range ss.name2Addr {
+		srv := nodeGetService(addr)
+		if srv == nil {
+			continue
+		}
+		n := srv.InFlightRequests()
+		if n > 0 {
+			perService[name] = n
+			totalReq += n
+		}
+	}
+
+	var pendingSessions int64
+	ss.Lock()
+	for _, h := range ss.handle {
+		pendingSessions += h.pendingSessions()
+	}
+	ss.Unlock()
+	return totalReq, perService, pendingSessions
+}
+
+func (ss *Node) resolveStopOrder() []string {
+	services := Config.CurNodeServices
+	if len(services) <= 1 {
+		return append([]string(nil), services...)
+	}
+
+	deps := ss.regOpt.ServiceDependencies
+	if len(deps) == 0 {
+		return reverseCopy(services)
+	}
+
+	serviceSet := make(map[string]struct{}, len(services))
+	for _, s := range services {
+		serviceSet[s] = struct{}{}
+	}
+
+	indegree := make(map[string]int, len(services))
+	adj := make(map[string][]string, len(services))
+	for _, s := range services {
+		indegree[s] = 0
+	}
+
+	// A depends on B => startup: B -> A, stop should reverse topo.
+	for svc, depList := range deps {
+		if _, ok := serviceSet[svc]; !ok {
+			continue
+		}
+		for _, dep := range depList {
+			if _, ok := serviceSet[dep]; !ok {
+				continue
+			}
+			adj[dep] = append(adj[dep], svc)
+			indegree[svc]++
+		}
+	}
+
+	queue := make([]string, 0, len(services))
+	for _, s := range services {
+		if indegree[s] == 0 {
+			queue = append(queue, s)
+		}
+	}
+
+	startupOrder := make([]string, 0, len(services))
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		startupOrder = append(startupOrder, cur)
+		for _, next := range adj[cur] {
+			indegree[next]--
+			if indegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	if len(startupOrder) != len(services) {
+		ss.logger.Warnf("service dependency has cycle, fallback to reverse order: %v", services)
+		return reverseCopy(services)
+	}
+
+	stopOrder := reverseCopy(startupOrder)
+	ss.logger.Infof("service stop order resolved by dependencies: %v", stopOrder)
+	return stopOrder
+}
+
+func reverseCopy(in []string) []string {
+	out := make([]string, len(in))
+	for i := range in {
+		out[i] = in[len(in)-1-i]
+	}
+	return out
+}
+
+func (ss *Node) validateServiceDependencies(services []string) error {
+	deps := ss.regOpt.ServiceDependencies
+	if len(deps) == 0 {
+		return nil
+	}
+
+	serviceSet := make(map[string]struct{}, len(services))
+	for _, s := range services {
+		serviceSet[s] = struct{}{}
+	}
+
+	for svc, depList := range deps {
+		if _, ok := serviceSet[svc]; !ok {
+			return NewError(ErrInvalidArgument, fmt.Sprintf("service dependency key not in current node: %s", svc))
+		}
+
+		for _, dep := range depList {
+			if _, ok := serviceSet[dep]; !ok {
+				return NewError(ErrInvalidArgument, fmt.Sprintf("service dependency target not in current node: %s -> %s", svc, dep))
+			}
+		}
+	}
+
+	const (
+		colorWhite = 0
+		colorGray  = 1
+		colorBlack = 2
+	)
+
+	color := make(map[string]int, len(services))
+	stack := make([]string, 0, len(services))
+
+	var dfs func(string) error
+	dfs = func(cur string) error {
+		color[cur] = colorGray
+		stack = append(stack, cur)
+		for _, dep := range deps[cur] {
+			switch color[dep] {
+			case colorWhite:
+				if err := dfs(dep); err != nil {
+					return err
+				}
+			case colorGray:
+				cycleStart := 0
+				for i := len(stack) - 1; i >= 0; i-- {
+					if stack[i] == dep {
+						cycleStart = i
+						break
+					}
+				}
+				cyclePath := append(append([]string(nil), stack[cycleStart:]...), dep)
+				return NewError(ErrInvalidArgument, "service dependency cycle: "+strings.Join(cyclePath, " -> "))
+			}
+		}
+
+		stack = stack[:len(stack)-1]
+		color[cur] = colorBlack
+		return nil
+	}
+
+	for _, s := range services {
+		if color[s] == colorWhite {
+			if err := dfs(s); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (ss *Node) nodeStartListen() {
