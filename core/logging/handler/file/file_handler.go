@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gmbytes/snow/core/logging"
@@ -16,6 +17,18 @@ import (
 )
 
 var _ logging.ILogHandler = (*Handler)(nil)
+
+// BackpressureMode 日志 channel 满时的背压策略。
+type BackpressureMode int
+
+const (
+	// BackpressureDrop channel 满时丢弃当前日志（默认行为，与历史兼容）。
+	BackpressureDrop BackpressureMode = iota
+	// BackpressureBlock channel 满时阻塞调用方，直到有空间写入。
+	BackpressureBlock
+	// BackpressureDropLow channel 满时仅保留 >= DropMinLevel 的日志，低级别日志丢弃。
+	BackpressureDropLow
+)
 
 type Option struct {
 	LogPath                    string                   `snow:"LogPath"`
@@ -29,6 +42,36 @@ type Option struct {
 	FileRollingMegabytes       int                      `snow:"FileRollingMegabytes"`
 	FileRollingIntervalSeconds int                      `snow:"FileRollingIntervalSeconds"`
 	Compress                   bool                     `snow:"Compress"`
+
+	// BackpressureMode channel 满时的背压策略，默认 BackpressureDrop。
+	BackpressureMode BackpressureMode `snow:"BackpressureMode"`
+	// DropMinLevel BackpressureDropLow 模式下保留的最低级别（默认 WARN）。
+	DropMinLevel logging.Level `snow:"DropMinLevel"`
+}
+
+// dropStats 记录各级别丢弃计数，用于可观测性。
+type dropStats struct {
+	counts [6]atomic.Int64 // 索引对应 logging.Level (NONE=0..FATAL=5)
+	total  atomic.Int64
+}
+
+func (d *dropStats) inc(level logging.Level) {
+	if int(level) >= 0 && int(level) < len(d.counts) {
+		d.counts[level].Add(1)
+	}
+	d.total.Add(1)
+}
+
+func (d *dropStats) swapTotal() int64 {
+	return d.total.Swap(0)
+}
+
+func (d *dropStats) snapshot() [6]int64 {
+	var s [6]int64
+	for i := range d.counts {
+		s[i] = d.counts[i].Swap(0)
+	}
+	return s
 }
 
 type Handler struct {
@@ -46,6 +89,8 @@ type Handler struct {
 	sortedFilterKeys  []string
 	cacheFilterKeyMap map[string]struct{}
 	formatter         func(logData *logging.LogData) string
+
+	dropped dropStats
 }
 
 func NewHandler() *Handler {
@@ -69,7 +114,46 @@ func NewHandler() *Handler {
 	}
 
 	slices.Sort(handler.sortedFilterKeys)
+	handler.startDropReporter()
 	return handler
+}
+
+// DroppedTotal 返回自上次调用以来被丢弃的日志总数（原子交换，调用即清零）。
+// 可用于外部 MetricCollector 上报。
+func (ss *Handler) DroppedTotal() int64 {
+	return ss.dropped.swapTotal()
+}
+
+// DroppedSnapshot 返回自上次调用以来各级别的丢弃计数（原子交换，调用即清零）。
+func (ss *Handler) DroppedSnapshot() [6]int64 {
+	return ss.dropped.snapshot()
+}
+
+// startDropReporter 每 30 秒检查丢弃计数，若有丢弃则输出到 stderr。
+func (ss *Handler) startDropReporter() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		levelNames := [6]string{"NONE", "TRACE", "DEBUG", "INFO", "WARN", "ERROR"}
+		for range ticker.C {
+			snap := ss.dropped.snapshot()
+			var total int64
+			for _, v := range snap {
+				total += v
+			}
+			if total == 0 {
+				continue
+			}
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("file log dropped %d entries in last 30s:", total))
+			for i, v := range snap {
+				if v > 0 {
+					sb.WriteString(fmt.Sprintf(" %s=%d", levelNames[i], v))
+				}
+			}
+			_, _ = fmt.Fprintln(os.Stderr, sb.String())
+		}
+	}()
 }
 
 func (ss *Handler) Construct(option *option.Option[*Option], repo *logging.LogFormatterContainer) {
@@ -191,10 +275,36 @@ func (ss *Handler) Log(logData *logging.LogData) {
 		File:    fileName,
 		Message: message,
 	}
-	select {
-	case logCh <- unit:
-	default:
-		_, _ = fmt.Fprintln(os.Stderr, "file log channel full")
+
+	ss.lock.Lock()
+	mode := curOption.BackpressureMode
+	dropMin := curOption.DropMinLevel
+	ss.lock.Unlock()
+
+	if dropMin == logging.NONE {
+		dropMin = logging.WARN
+	}
+
+	switch mode {
+	case BackpressureBlock:
+		logCh <- unit
+	case BackpressureDropLow:
+		if logData.Level >= dropMin {
+			// 高优先级日志：阻塞写入，保证不丢
+			logCh <- unit
+		} else {
+			select {
+			case logCh <- unit:
+			default:
+				ss.dropped.inc(logData.Level)
+			}
+		}
+	default: // BackpressureDrop
+		select {
+		case logCh <- unit:
+		default:
+			ss.dropped.inc(logData.Level)
+		}
 	}
 }
 

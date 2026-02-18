@@ -222,15 +222,52 @@ type ICodec interface {
 
 ### 4.4 日志写入背压与缓冲治理
 
-**现状**
-- 文件日志 channel 固定容量，流量尖峰存在堆积或丢失风险。
+**当前进展（已落地）**
 
-**改进建议**
-- 缓冲容量配置化。
-- 引入背压策略（阻塞、丢弃低级别、采样）与告警计数器。
+**一、缓冲容量配置化**
 
-**验收标准**
-- 高峰期日志行为可预测，可观测，不出现无感丢失。
+- `file.Option.MaxLogChanLength` 已支持配置（默认 102400），热更新时自动重建 channel。
+
+**二、三种背压策略**
+
+通过 `file.Option.BackpressureMode` 配置（默认 `BackpressureDrop`，与历史行为兼容）：
+
+| 策略 | 枚举值 | 行为 | 适用场景 |
+|------|--------|------|----------|
+| `BackpressureDrop` | 0（默认） | channel 满时丢弃当前日志，计入丢弃计数 | 对延迟敏感、允许丢失低级别日志 |
+| `BackpressureBlock` | 1 | channel 满时阻塞调用方，直到有空间 | 不允许任何日志丢失（如审计场景） |
+| `BackpressureDropLow` | 2 | channel 满时仅保留 >= `DropMinLevel` 的日志（默认 WARN），低级别丢弃 | 高峰时优先保证告警/错误日志落盘 |
+
+配置示例（YAML）：
+
+```yaml
+Logging:
+  File:
+    MaxLogChanLength: 204800
+    BackpressureMode: 2       # DropLow
+    DropMinLevel: 4           # WARN（TRACE=1, DEBUG=2, INFO=3, WARN=4, ERROR=5）
+```
+
+**三、丢弃计数与告警**
+
+- 每条被丢弃的日志按级别计入原子计数器 `dropStats`（零锁开销）。
+- 后台协程每 30 秒检查：若该周期内有丢弃，输出汇总到 stderr，格式如：
+  ```
+  file log dropped 1523 entries in last 30s: DEBUG=1200 INFO=323
+  ```
+- 暴露 `Handler.DroppedTotal() int64` 和 `Handler.DroppedSnapshot() [6]int64` 方法，外部可接入 `IMetricCollector` 周期上报。
+
+**兼容策略**
+
+- 默认 `BackpressureMode = 0`（Drop），行为与改造前一致，无需修改任何现有配置。
+- 原来 channel 满时输出的 `"file log channel full"` 单行 stderr 升级为带计数、带级别的周期汇总。
+
+**验收结果（当前）**
+
+- 高峰期日志行为可通过 `BackpressureMode` 显式选择，不再只有"静默丢弃"一种结果。
+- 丢弃量可观测：stderr 周期输出 + 可编程 API 对接指标系统。
+- `BackpressureBlock` 模式下保证零丢失（以调用方延迟为代价）。
+- `BackpressureDropLow` 模式下高优先级日志（WARN/ERROR/FATAL）保证落盘。
 
 ## 5. P2：架构演进与工程化
 
