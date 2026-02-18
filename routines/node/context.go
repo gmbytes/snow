@@ -63,6 +63,12 @@ func (ss *rpcContext) Return(args ...any) {
 func (ss *rpcContext) Error(err error) {
 	ss.mRsp.err = err
 	ss.mRsp.src = 0
+
+	// 统计 RPC 错误次数，便于按服务维度聚合错误率
+	if ss.srv != nil && ss.srv.node != nil && ss.srv.node.regOpt.MetricCollector != nil {
+		ss.srv.node.regOpt.MetricCollector.Counter("[ServiceError] "+ss.srv.name, 1)
+	}
+
 	ss.flush()
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/gmbytes/snow/core/kvs"
 	"github.com/gmbytes/snow/core/logging"
 	"github.com/gmbytes/snow/core/logging/slog"
+	"github.com/gmbytes/snow/core/metrics"
 	"github.com/gmbytes/snow/core/option"
 	"github.com/gmbytes/snow/core/task"
 	"github.com/gmbytes/snow/core/ticker"
@@ -168,6 +169,11 @@ type Node struct {
 
 func (ss *Node) Construct(host host.IHost, logger *logging.Logger[Node], nodeOpt *option.Option[*Option], registerOpt *option.Option[*RegisterOption]) {
 	ss.regOpt = registerOpt.Get()
+
+	// 若用户未提供 MetricCollector，自动注入内置 Prometheus 实现
+	if ss.regOpt.MetricCollector == nil {
+		ss.regOpt.MetricCollector = metrics.NewPromCollector("snow")
+	}
 
 	ss.nodeScope = host.GetRoutineProvider().GetRootScope()
 	ss.chPreprocessor = ss.regOpt.ClientHandlePreprocessor
@@ -835,12 +841,19 @@ func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySigChan chan
 		slog.Infof("node connect to %v...", nAddr)
 		conn, err := net.Dial("tcp4", nAddr.String())
 		if err != nil {
+			if mc := gNode.regOpt.MetricCollector; mc != nil {
+				mc.Counter("[NodeReconnectFailed] "+nAddr.String(), 1)
+			}
 			slog.Warnf("node get remote handle failed: %+v", err)
 			h.safeDelete()
 			if retrySigChan != nil {
 				retrySigChan <- true
 			}
 			return
+		}
+
+		if mc := gNode.regOpt.MetricCollector; mc != nil {
+			mc.Counter("[NodeReconnectSuccess] "+nAddr.String(), 1)
 		}
 
 		h.conn = conn

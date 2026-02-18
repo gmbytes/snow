@@ -538,22 +538,31 @@ func (ss *Service) doFunc(f *tagFunc) {
 
 func (ss *Service) doDispatch(mReq *message) {
 	var funcName string
+	mc := ss.node.regOpt.MetricCollector
 	isRequest := mReq.sess > 0
 	if isRequest {
 		atomic.AddInt64(&ss.inFlightRequests, 1)
+		if mc != nil {
+			mc.Gauge("[ServiceInFlight] "+ss.name, ss.InFlightRequests())
+		}
 	}
 	defer func() {
 		if isRequest {
 			atomic.AddInt64(&ss.inFlightRequests, -1)
+			if mc != nil {
+				mc.Gauge("[ServiceInFlight] "+ss.name, ss.InFlightRequests())
+			}
 		}
 		mReq.clear()
 
 		if err := recover(); err != nil {
 			buf := debug.StackInfo()
 			if len(funcName) == 0 {
-				ss.Errorf("service execute anonymous function error: %v\n%s", err, buf)
+				ss.Errorf("service execute anonymous function error: %v trace_id=%d service=%s peer=%v\n%s",
+					err, mReq.trace, ss.name, mReq.nAddr, buf)
 			} else {
-				ss.Errorf("service execute function %s error: %v\n%s", funcName, err, buf)
+				ss.Errorf("service execute function %s error: %v trace_id=%d service=%s method=%s peer=%v\n%s",
+					funcName, err, mReq.trace, ss.name, funcName, mReq.nAddr, buf)
 			}
 		}
 	}()
@@ -561,7 +570,8 @@ func (ss *Service) doDispatch(mReq *message) {
 	var err error
 	funcName, err = mReq.getRequestFunc()
 	if err != nil {
-		ss.Errorf("doDispatch: function name error: %+v", err)
+		ss.Errorf("doDispatch: function name error: %v trace_id=%d service=%s peer=%v",
+			err, mReq.trace, ss.name, mReq.nAddr)
 		return
 	}
 
@@ -581,7 +591,7 @@ func (ss *Service) doDispatch(mReq *message) {
 		trace: mReq.trace,
 	}
 
-	if mc := ss.node.regOpt.MetricCollector; mc != nil {
+	if mc != nil {
 		mc.Counter("[ServiceRpc] "+ss.name, 1)
 
 		start := time.Now().UnixNano()

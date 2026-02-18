@@ -120,6 +120,15 @@ func (ss *Node) postInitOptions() error {
 
 	ss.handleRequestMethod("/", http.MethodPost, ss.notFound)
 
+	// 若 MetricCollector 提供了 FastHTTPHandler，自动挂载 GET /metrics 端点
+	if ss.regOpt != nil {
+		if hp, ok := ss.regOpt.MetricCollector.(interface {
+			FastHTTPHandler() fasthttp.RequestHandler
+		}); ok && hp != nil {
+			ss.handleRequestMethod("/metrics", http.MethodGet, hp.FastHTTPHandler())
+		}
+	}
+
 	task.Execute(func() {
 		if err := srv.Serve(ss.httpListener); err != nil {
 			ss.logger.Infof("http listener stopped: %+v", err)

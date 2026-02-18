@@ -86,16 +86,91 @@
 
 ### 3.4 基础可观测性落地
 
-**现状**
-- 有 `IMetricCollector` 接口，但缺少官方默认实现和统一指标规范。
+**当前进展（已落地）**
 
-**改进建议**
-- 提供内置 Prometheus 实现（可替换）。
-- 建立最小指标集：QPS、P95/P99、错误率、会话数、重连次数、队列长度。
-- 统一日志字段：trace_id、service、method、peer、error_code。
+**一、内置 Prometheus 指标采集（可替换）**
 
-**验收标准**
-- 默认部署即可拉取关键指标并定位慢调用。
+- 新增 `core/metrics/PromCollector`，实现 `IMetricCollector` 接口（`Gauge` / `Counter` / `Histogram`）。
+- 底层映射为三个 Prometheus 指标族，以 label `name` 区分逻辑指标：
+
+| Prometheus 指标名 | 类型 | 说明 |
+|-------------------|------|------|
+| `snow_gauge{name}` | Gauge | 瞬时值（在途请求数等） |
+| `snow_counter_total{name}` | Counter | 累计值（RPC 调用次数、错误次数、重连次数等） |
+| `snow_duration_seconds{name}` | Histogram | 时延分布（自动纳秒→秒转换），支持 P50/P95/P99 聚合 |
+
+- `Node.Construct` 中：若用户未提供 `RegisterOption.MetricCollector`，自动注入 `metrics.NewPromCollector("snow")`。
+- 用户可通过 `RegisterOption.MetricCollector` 传入自定义实现来替换默认行为。
+
+**二、最小指标集**
+
+| 指标维度 | 采集点 | Prometheus label `name` 示例 |
+|----------|--------|------------------------------|
+| QPS（RPC 调用总数） | `Service.doDispatch` 入口 | `[ServiceRpc] <ServiceName>` |
+| 请求时延（P95/P99） | `Service.doDispatch` request 完成时 | `[ServiceRequest] <ServiceName>::<Method>` |
+| Post 时延 | `Service.doDispatch` post 完成时 | `[ServicePost] <ServiceName>::<Method>` |
+| 主线程函数执行时延 | `Service.onTick` 中每次函数调用 | `[ServiceFunc] <ServiceName>::<Tag>` |
+| 错误率 | `rpcContext.Error()` 触发时 | `[ServiceError] <ServiceName>` |
+| 在途请求数（会话压力） | `doDispatch` in-flight 增减时 | `[ServiceInFlight] <ServiceName>` |
+| 重连次数 | `nodeGetMessageSender` 连接成功/失败时 | `[NodeReconnectSuccess] <Addr>` / `[NodeReconnectFailed] <Addr>` |
+
+**三、指标暴露（`/metrics` 端点）**
+
+- `PromCollector` 实现了 `FastHTTPHandler() fasthttp.RequestHandler`。
+- `Node.postInitOptions` 中自动检测 `MetricCollector` 是否提供该方法，若有则挂载 `GET /metrics` 到 Node HTTP 服务器。
+- 启动后即可通过 `http://<NodeHost>:<HttpPort>/metrics` 被 Prometheus 抓取，无需额外代码。
+
+**四、统一日志字段**
+
+已在 RPC 核心错误日志中补齐结构化字段（key=value 格式）：
+
+| 字段 | 来源 | 出现位置 |
+|------|------|----------|
+| `trace_id` | `message.trace` | `doDispatch` panic recover、函数名解析失败 |
+| `service` | `Service.name` | 同上 |
+| `method` | RPC 函数名 | 同上（有方法名时） |
+| `peer` | `message.nAddr`（远端地址） | 同上 |
+| `error_code` | `logging.ExtractErrorCode` 自动提取 | 所有日志行（DefaultLogFormatter 已内置输出 `error_code=<code>`） |
+
+**五、Prometheus 抓取配置示例**
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: snow
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['127.0.0.1:8080']   # Node 的 HttpPort
+    scrape_interval: 15s
+```
+
+**六、Grafana 常用查询**
+
+| 用途 | PromQL |
+|------|--------|
+| 服务 RPC QPS | `rate(snow_counter_total{name=~"\\[ServiceRpc\\].*"}[1m])` |
+| 请求时延 P95 | `histogram_quantile(0.95, rate(snow_duration_seconds_bucket{name=~"\\[ServiceRequest\\].*"}[5m]))` |
+| 请求时延 P99 | `histogram_quantile(0.99, rate(snow_duration_seconds_bucket{name=~"\\[ServiceRequest\\].*"}[5m]))` |
+| 错误率 | `rate(snow_counter_total{name=~"\\[ServiceError\\].*"}[5m]) / rate(snow_counter_total{name=~"\\[ServiceRpc\\].*"}[5m])` |
+| 在途请求数 | `snow_gauge{name=~"\\[ServiceInFlight\\].*"}` |
+| 重连次数（1h） | `increase(snow_counter_total{name=~"\\[NodeReconnect(Success\|Failed)\\].*"}[1h])` |
+
+**兼容策略**
+
+- `IMetricCollector` 接口不变，既有用户自定义实现无需修改。
+- 不希望使用 Prometheus 时，可显式传入自定义实现或 `nil`（传 `nil` 时框架会自动填充默认实现；若确实不需要任何指标，可实现一个空的 `IMetricCollector`）。
+
+**验收结果（当前）**
+
+- 默认部署（不传 `MetricCollector`）即自动注入 Prometheus 采集，`GET /metrics` 可直接拉取。
+- 通过上述 PromQL 可聚合各服务 QPS、P95/P99 时延、错误率，定位慢调用与异常服务。
+- 日志行中 RPC 错误统一携带 `trace_id`、`service`、`method`、`peer`、`error_code`，可按维度检索。
+
+**后续增强（待办）**
+
+- 将 Histogram bucket 设为可配置（当前使用 Prometheus 默认桶 `DefBuckets`）。
+- 增加 Node 级聚合指标（总连接数、消息队列长度）。
+- 接入 OpenTelemetry Trace，实现 `trace_id` 跨节点传播与 Span 上报。
 
 ## 4. P1：性能与运行效率
 
