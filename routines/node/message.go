@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-
-	"github.com/gmbytes/snow/core/xjson"
 )
 
 const messageHeaderLen = 24
@@ -43,7 +41,7 @@ func (ss *message) marshalArgs(args []reflect.Value) ([]byte, error) {
 		mArgs = append(mArgs, arg.Interface())
 	}
 
-	bs, err := xjson.Marshal(mArgs)
+	bs, err := nodeCodec().Marshal(mArgs)
 	if err != nil {
 		return nil, WrapError(ErrCodec, "message.marshalArgs", err)
 	}
@@ -55,7 +53,7 @@ func (ss *message) unmarshalArgs(bs []byte, argI int, ft reflect.Type) ([]reflec
 	for i := argI; i < ft.NumIn(); i++ {
 		tArgs = append(tArgs, reflect.New(ft.In(i)).Interface())
 	}
-	if err := xjson.Unmarshal(bs, &tArgs); err != nil {
+	if err := nodeCodec().Unmarshal(bs, &tArgs); err != nil {
 		return nil, WrapError(ErrCodec, "message.unmarshalArgs", err)
 	}
 	ret := make([]reflect.Value, 0, len(tArgs))
@@ -85,7 +83,7 @@ func (ss *message) marshal() ([]byte, error) {
 			Code: CodeOf(ss.err),
 			Msg:  ss.err.Error(),
 		}
-		errBytes, err := xjson.Marshal(we)
+		errBytes, err := nodeCodec().Marshal(we)
 		if err != nil {
 			errBytes = []byte(fmt.Sprintf(`{"code":"%s","msg":"%s"}`, ErrUnknown, ss.err.Error()))
 		}
@@ -162,7 +160,7 @@ func (ss *message) getError() error {
 
 	var we wireError
 	payload := ss.data[messageHeaderLen:]
-	if err := xjson.Unmarshal(payload, &we); err == nil && we.Code != "" {
+	if err := nodeCodec().Unmarshal(payload, &we); err == nil && we.Code != "" {
 		return &Error{
 			Code: we.Code,
 			Msg:  we.Msg,

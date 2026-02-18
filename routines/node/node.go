@@ -74,6 +74,9 @@ type RegisterOption struct {
 	ServerHandlePreprocessor xnet.IPreprocessor
 	PostInitializer          func()
 	MetricCollector          IMetricCollector
+	// Codec TCP RPC 参数编解码器，默认 JsonCodec（基于 xjson）。
+	// HTTP RPC 始终使用 JSON，不受此字段影响。
+	Codec ICodec
 }
 
 type ServiceRegisterInfo struct {
@@ -173,6 +176,11 @@ func (ss *Node) Construct(host host.IHost, logger *logging.Logger[Node], nodeOpt
 	// 若用户未提供 MetricCollector，自动注入内置 Prometheus 实现
 	if ss.regOpt.MetricCollector == nil {
 		ss.regOpt.MetricCollector = metrics.NewPromCollector("snow")
+	}
+
+	// 若用户未提供 Codec，默认使用 JSON（基于 xjson / json-iterator）
+	if ss.regOpt.Codec == nil {
+		ss.regOpt.Codec = JsonCodec{}
 	}
 
 	ss.nodeScope = host.GetRoutineProvider().GetRootScope()

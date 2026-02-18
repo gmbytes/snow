@@ -176,11 +176,11 @@ scrape_configs:
 
 ### 4.1 编解码可插拔（ICodec）
 
-**现状**
-- RPC 主要依赖 JSON（`xjson`），高频场景开销明显。
+**当前进展（已落地：基础版）**
 
-**改进建议**
-- 定义统一编解码接口：
+**一、统一编解码接口**
+
+已在 `routines/node/interf.go` 定义 `ICodec` 接口：
 
 ```go
 type ICodec interface {
@@ -190,11 +190,59 @@ type ICodec interface {
 }
 ```
 
-- 默认保留 JSON，新增 MessagePack/Protobuf 插件实现。
-- 协议层增加 codec 标识，支持灰度切换。
+**二、默认 JSON 实现**
 
-**验收标准**
-- 在基准压测中，二进制 codec 相比 JSON 的 CPU 或延迟有可量化下降。
+- 新增 `routines/node/codec.go`，提供 `JsonCodec`（基于 `xjson` / json-iterator），作为内置默认实现。
+- `Node.Construct` 中：若用户未提供 `RegisterOption.Codec`，自动注入 `JsonCodec{}`。
+
+**三、TCP RPC 已接入 ICodec**
+
+`message.go` 中以下序列化路径已改为调用 `nodeCodec()`（运行时读取 Node 配置的 Codec 实例）：
+
+| 调用点 | 用途 |
+|--------|------|
+| `marshalArgs()` | 请求/响应参数序列化 |
+| `unmarshalArgs()` | 请求/响应参数反序列化 |
+| `marshal()` 错误分支 | `wireError` 序列化 |
+| `getError()` | `wireError` 反序列化 |
+
+**四、HTTP RPC 保持 JSON**
+
+HTTP RPC（`proxy_http.go` / `context_http.go` / `service.go` 中 `processHttpRpc`）始终使用 `xjson`，因 HTTP 协议语义绑定 `Content-Type: application/json`，不受 `ICodec` 配置影响。
+
+**五、用户接入方式**
+
+```go
+// 自定义 Codec 示例：实现 ICodec 接口
+type MsgPackCodec struct{}
+func (MsgPackCodec) Marshal(v any) ([]byte, error)     { /* msgpack 编码 */ }
+func (MsgPackCodec) Unmarshal(data []byte, v any) error { /* msgpack 解码 */ }
+func (MsgPackCodec) Name() string                      { return "msgpack" }
+
+// 注册时传入
+node.AddNode(b, func() *node.RegisterOption {
+    return &node.RegisterOption{
+        Codec: MsgPackCodec{},
+        // ...
+    }
+})
+```
+
+**兼容策略**
+
+- 默认 `Codec = nil` 时自动注入 `JsonCodec{}`，行为与改造前完全一致。
+- 切换 Codec 需确保集群所有节点统一升级，否则 TCP 消息体将无法互相解码。
+
+**验收结果（当前）**
+
+- TCP RPC 的编解码已可插拔，可通过 `RegisterOption.Codec` 一行替换为 MessagePack / Protobuf 等二进制 Codec。
+- HTTP RPC 不受影响，保持 JSON 兼容性。
+- 默认行为零变更，无需修改任何现有配置。
+
+**后续增强（待办）**
+
+- 提供官方 MessagePack / Protobuf 插件实现。
+- 在基准压测中对比二进制 Codec 与 JSON 的 CPU 和延迟差异。
 
 ### 4.2 高频对象池化
 

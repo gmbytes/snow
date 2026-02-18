@@ -7,11 +7,15 @@
 - **依赖注入**：基于接口的 IoC 容器，支持 Singleton / Scoped / Transient 三种生命周期
 - **配置管理**：多配置源（JSON / YAML / Memory / File），支持文件热更新
 - **分布式 RPC**：TCP 二进制协议 + HTTP JSON 协议，透明代理，自动路由
-- **日志系统**：分层设计（Logger → Handler → Formatter），支持控制台彩色输出、文件滚动、zstd 压缩
+- **编解码可插拔**：TCP RPC 参数序列化通过 `ICodec` 接口抽象，默认 JSON，可替换为 MessagePack / Protobuf 等
+- **日志系统**：分层设计（Logger → Handler → Formatter），支持控制台彩色输出、文件滚动、zstd 压缩、**三种背压策略**（Drop / Block / DropLow）
 - **生命周期管理**：Routine 的完整生命周期（BeforeStart → Start → AfterStart → BeforeStop → Stop → AfterStop），所有阶段支持 `context.Context` 传播
+- **优雅停机**：三阶段 Drain 模式（拒绝新请求 → 等待在途 → 强制退出），支持按服务依赖拓扑排序停机
 - **高效调度**：goroutine 池（ants）、多 Worker 定时器池、三级时间轮
 - **Promise 异步模型**：链式调用，支持 Then / Catch / Final / WithContext
 - **Context 全链路传播**：RPC 超时、取消、Trace 统一由 `context.Context` 驱动，Service 停止时自动取消所有进行中的 RPC
+- **统一错误模型**：结构化 `ErrorCode` + `Error` 包装，支持 `errors.Is/As`，线上日志可按错误码聚合
+- **内置可观测性**：默认 Prometheus 指标采集（QPS、P95/P99、错误率、在途请求数、重连次数），自动暴露 `/metrics` 端点
 - **版本管理**：SemVer 语义化版本解析与比较，支持 prerelease / build 元数据
 - **自动服务注册**：泛型 `Register[T, U]()` 在 init() 中声明式注册，`RegisterService()` 一键挂载
 
@@ -43,6 +47,7 @@ snow/
 │   ├── task/                      # goroutine 池任务执行
 │   ├── ticker/                    # 多 Worker 定时器池
 │   ├── version/                   # 语义化版本（SemVer）管理
+│   ├── metrics/                   # 指标采集（内置 Prometheus 实现）
 │   ├── xjson/                     # JSON 编解码封装（json-iterator）
 │   ├── xnet/                      # 网络接口（Server、Preprocessor）
 │   └── xsync/                     # 同步工具（TimeoutWaitGroup）
@@ -285,10 +290,15 @@ Logger → RootHandler → CompoundHandler → ConsoleHandler (彩色输出)
 日志级别：`TRACE < DEBUG < INFO < WARN < ERROR < FATAL`
 
 文件 Handler 特性：
-- 异步写入（channel 缓冲）
+- 异步写入（channel 缓冲，容量可配置，默认 102400）
 - 按时间 / 大小自动滚动
 - 支持 zstd 压缩归档
 - 文件名模板：`%Y_%M_%D_%h_%m_%i`
+- 三种背压策略（`BackpressureMode`）：
+  - `Drop`（默认）：channel 满时丢弃，计入丢弃计数
+  - `Block`：channel 满时阻塞调用方，保证零丢失
+  - `DropLow`：channel 满时仅保留 >= `DropMinLevel`（默认 WARN）的日志
+- 丢弃统计：按级别原子计数，每 30s 输出汇总到 stderr；暴露 `DroppedTotal()` / `DroppedSnapshot()` API 供外部上报
 
 ### 4. 生命周期管理 (`core/host`)
 
@@ -332,9 +342,9 @@ TCP 二进制协议：
 ```
 
 消息类型：
-- **请求** (`sess > 0`)：函数名 + JSON 参数
+- **请求** (`sess > 0`)：函数名 + 参数（通过 `ICodec` 序列化，默认 JSON）
 - **Post** (`sess == 0`)：单向通知，无响应
-- **响应** (`sess < 0`)：JSON 返回值
+- **响应** (`sess < 0`)：返回值（通过 `ICodec` 序列化）
 - **Ping** (`dst == 0`)：连接保活
 
 #### Service 线程模型
@@ -521,7 +531,75 @@ ver1.GreaterThan(ver2)
 dbVer := version.GetAppCurrentDBVersion()
 ```
 
-### 8. JSON 工具 (`core/xjson`)
+### 8. 编解码可插拔 (`ICodec`)
+
+TCP RPC 的参数序列化通过 `ICodec` 接口抽象，默认使用 JSON（`JsonCodec`，基于 `xjson`）。用户可通过 `RegisterOption.Codec` 替换为任意二进制编解码器：
+
+```go
+type ICodec interface {
+    Marshal(v any) ([]byte, error)
+    Unmarshal(data []byte, v any) error
+    Name() string
+}
+```
+
+```go
+node.AddNode(b, func() *node.RegisterOption {
+    return &node.RegisterOption{
+        Codec: MyMsgPackCodec{},  // 替换为 MessagePack
+        // ...
+    }
+})
+```
+
+- 未配置时自动注入 `JsonCodec{}`，行为与历史版本一致
+- HTTP RPC 始终使用 JSON（因 HTTP Content-Type 语义绑定），不受 `ICodec` 影响
+
+### 9. 统一错误模型
+
+框架定义了结构化错误码体系（`ErrorCode` + `Error` 包装），支持 `errors.Is/As`：
+
+| 错误码 | 含义 |
+|--------|------|
+| `ErrTimeout` | 请求超时 |
+| `ErrServiceNotFound` | 服务未找到 |
+| `ErrCodec` | 编解码错误 |
+| `ErrTransport` | 传输层错误 |
+| `ErrCancelled` | 请求被取消 |
+| `ErrInvalidArgument` | 参数非法 |
+| `ErrInternal` | 内部错误 |
+
+远端 RPC 错误序列化为 `code + msg` 结构，接收端可还原错误码。日志自动提取 `error_code` 字段用于聚合。
+
+### 10. 优雅停机（Drain 模式）
+
+`Node.Stop()` 执行三阶段停机：
+
+1. **拒绝新请求**：进入 drain 模式，关闭 TCP/HTTP 监听
+2. **等待在途请求**：按 `StopDrainTimeoutSec`（默认 8s）轮询等待在途 RPC 和会话清空
+3. **强制退出**：超时后输出剩余明细并继续 stop 流程
+
+支持按 `ServiceDependencies` 声明依赖拓扑，框架自动计算停机顺序（依赖方先停，被依赖方后停）。
+
+### 11. 指标与可观测性
+
+启用 Node 且未自定义 `RegisterOption.MetricCollector` 时，框架自动注入内置 Prometheus 采集器，并在 Node 的 HTTP 端口暴露 **`GET /metrics`**。
+
+核心指标：
+
+| 指标 | Prometheus 名 | 说明 |
+|------|---------------|------|
+| RPC QPS | `snow_counter_total{name="[ServiceRpc] ..."}` | 各服务 RPC 调用总数 |
+| 请求时延 | `snow_duration_seconds{name="[ServiceRequest] ..."}` | P50/P95/P99 聚合 |
+| 错误率 | `snow_counter_total{name="[ServiceError] ..."}` | 按服务统计 |
+| 在途请求数 | `snow_gauge{name="[ServiceInFlight] ..."}` | 实时会话压力 |
+| 重连次数 | `snow_counter_total{name="[NodeReconnect...] ..."}` | 连接成功/失败 |
+
+用户可通过 `RegisterOption.MetricCollector` 传入自定义实现替换 Prometheus。
+
+完整 Prometheus 抓取配置与 Grafana 查询示例见 [snow_optimization.md - 3.4](snow_optimization.md)。
+
+### 12. JSON 工具 (`core/xjson`)
 
 基于 `json-iterator/go` 的高性能 JSON 封装，框架内部统一使用：
 
@@ -532,7 +610,7 @@ str, err := xjson.MarshalToString(obj)
 err := xjson.UnmarshalFromString(str, &obj)
 ```
 
-### 9. Crontab (`core/crontab`)
+### 13. Crontab (`core/crontab`)
 
 支持标准 Cron 表达式和宏：
 
@@ -557,13 +635,18 @@ Logging:
   File:
     Level: INFO
     Path: "./logs"
-    MaxSize: 104857600  # 100MB
+    MaxSize: 104857600        # 100MB
+    MaxLogChanLength: 102400  # 日志 channel 缓冲区容量
+    BackpressureMode: 0       # 0=Drop(默认) 1=Block 2=DropLow
+    DropMinLevel: 4           # DropLow 模式下保留的最低级别（4=WARN）
 
 Node:
   LocalIP: "127.0.0.1"
   BootName: MyNode
   HttpKeepAliveSeconds: 60
   HttpTimeoutSeconds: 30
+  StopDrainTimeoutSec: 8     # 优雅停机等待在途请求超时（秒）
+  StopDrainPollMs: 100       # 停机轮询间隔（毫秒）
   Nodes:
     MyNode:
       Order: 1
@@ -577,17 +660,18 @@ Node:
 
 ## 依赖
 
-| 依赖                        | 用途               |
-|-----------------------------|--------------------|
-| panjf2000/ants/v2           | Goroutine 池        |
-| valyala/fasthttp            | 高性能 HTTP 服务器    |
-| fsnotify/fsnotify           | 文件系统事件监听      |
-| json-iterator/go            | 高性能 JSON 编解码    |
-| klauspost/compress          | zstd 压缩            |
-| gopkg.in/yaml.v3            | YAML 解析            |
-| go-strip-json-comments      | JSON 注释移除         |
-| arl/assertgo                | 断言工具             |
-| stretchr/testify            | 测试框架             |
+| 依赖                           | 用途               |
+|---------------------------------|--------------------|
+| panjf2000/ants/v2              | Goroutine 池        |
+| valyala/fasthttp               | 高性能 HTTP 服务器    |
+| prometheus/client_golang       | Prometheus 指标采集   |
+| fsnotify/fsnotify              | 文件系统事件监听      |
+| json-iterator/go               | 高性能 JSON 编解码    |
+| klauspost/compress             | zstd 压缩            |
+| gopkg.in/yaml.v3               | YAML 解析            |
+| go-strip-json-comments         | JSON 注释移除         |
+| arl/assertgo                   | 断言工具             |
+| stretchr/testify               | 测试框架             |
 
 ## License
 
@@ -595,140 +679,32 @@ Node:
 
 ---
 
-## 优化建议
+## 优化建议与进展
 
-以下是基于代码分析提出的框架优化建议：
+> 完整设计文档与实施细节见 [snow_optimization.md](snow_optimization.md)
 
-### 一、架构层面
+### 已实现
 
-#### 1. ~~引入 Context 传播机制~~ (已实现)
+| # | 主题 | 状态 | 说明 |
+|---|------|------|------|
+| 1 | Context 全链路传播 | **已实现** | `IRpcContext.Context()`、`IPromise.WithContext()`、三级回退、Service 生命周期 Context |
+| 2 | 自动服务注册 | **已实现** | `Register[T,U]()` + `RegisterService(b)` 泛型声明式注册 |
+| 3 | 统一错误模型 | **已实现** | 结构化 `ErrorCode` + `Error` 包装，关键路径已覆盖 |
+| 4 | 优雅停机（Drain） | **已实现** | 三阶段停机 + 依赖拓扑排序 + 在途统计明细输出 |
+| 5 | 基础可观测性 | **已实现** | 内置 Prometheus 采集 + `/metrics` 自动挂载 + 统一日志字段 |
+| 6 | 编解码可插拔（ICodec） | **已实现** | TCP RPC 序列化接口化，默认 JSON，可替换 |
+| 7 | 日志写入背压 | **已实现** | 三种背压策略 + 丢弃计数 + 周期告警 |
 
-已完成 RPC 全链路 `context.Context` 传播：
+### 待推进
 
-- `IRpcContext` 新增 `Context() context.Context`，Handler 可获取关联 Context
-- `IPromise` 新增 `WithContext(ctx)` 用于显式绑定 Context（自定义超时 / 上游取消传播）
-- `Service` 拥有生命周期 Context（从 `Node.ctx` 派生），停止时自动取消所有进行中的 RPC
-- 超时统一由 `context.WithTimeout` 控制，移除原有 `Timeout()` / `srv.After()` / `http.Client.Timeout` 多套机制
-- 调用方三级回退：`WithContext(ctx)` → `Service.ctx` → `context.Background()`
-- 本地 RPC 通过 `message.ctx` 传递 Context，远程 RPC 使用 `context.Background()` 兜底
-
-#### 2. ~~自动服务注册~~ (已实现)
-
-已完成泛型自动注册机制：
-
-- `Register[T, U]()` 在包 init() 中声明式注册，Kind 自动分配
-- `RegisterService(b)` 一键收集并注册所有服务
-- 支持可选 setup 回调（用于绑定 Option 配置等构建期操作）
-- `GetRegisteredService()` 获取已注册服务名列表
-
-#### 3. 错误处理标准化
-
-当前错误处理主要依赖 `panic/recover`，建议：
-- 定义统一的错误码体系（如 `ErrServiceNotFound`、`ErrTimeout`、`ErrCodec`）
-- RPC 方法支持返回 `error` 作为标准返回值，而非仅通过 `ctx.Error()` 
-- 减少 panic 的使用，用返回值替代
-
-#### 4. 服务发现与注册中心
-
-当前节点地址是静态配置 + `AddrUpdater` 动态更新，建议进一步引入服务发现机制：
-- 支持 etcd / Consul / ZooKeeper 等注册中心
-- 支持动态节点加入和退出
-- 支持健康检查和自动摘除
-
-### 二、性能层面
-
-#### 5. 消息序列化优化
-
-当前使用 JSON 序列化 RPC 参数（通过 `xjson` 封装），对于高频调用场景开销较大。建议：
-- 支持 Protocol Buffers 或 MessagePack 等二进制序列化
-- 提供序列化器接口，允许用户自定义：
-
-```go
-type ICodec interface {
-    Marshal(v any) ([]byte, error)
-    Unmarshal(data []byte, v any) error
-}
-```
-
-#### 6. 对象池化
-
-以下对象频繁创建和销毁，建议使用 `sync.Pool` 池化：
-- `message` 结构体
-- `rpcContext` / `httpRpcContext` 结构体
-- `[]byte` 缓冲区（handle.go 中的读写缓冲）
-- `promise` 结构体
-
-#### 7. 减少反射使用
-
-当前 RPC 分发大量使用 `reflect.Value.Call()`，性能开销显著。建议：
-- 启动时通过代码生成或泛型生成类型安全的调用包装
-- 对高频方法使用类型断言替代反射调用
-
-#### 8. 文件日志优化
-
-`file_handler.go` 中 channel 缓冲区大小固定为 512，高并发时可能成为瓶颈。建议：
-- 支持配置 channel 缓冲区大小
-- 考虑使用 ring buffer 替代 channel
-- 添加写入背压机制，避免日志丢失
-
-### 三、可靠性层面
-
-#### 9. 连接管理增强
-
-`remoteHandle` 的重连机制较为简单，建议：
-- 实现指数退避重连策略
-- 添加连接池支持，避免单点连接瓶颈
-- 支持连接的优雅关闭（drain 模式）
-- 增加心跳超时检测（当前只有发送端 ping，缺少接收端超时判定）
-
-#### 10. 会话管理改进
-
-当前会话超时检查间隔为固定 10 秒（`handle.go`），建议：
-- 使用时间轮管理会话超时，提高精度和效率
-- 支持每个 RPC 调用自定义超时时间
-- 添加会话数量限制，防止内存泄漏
-
-#### 11. 优雅停机
-
-当前停机使用固定超时，建议：
-- 支持等待进行中的 RPC 调用完成
-- 支持 drain 模式（停止接受新请求，处理完已有请求后关闭）
-- 停止顺序应支持依赖排序（依赖的服务后停止）
-
-### 四、可观测性层面
-
-#### 12. 指标收集完善
-
-当前定义了 `IMetricCollector` 接口但缺乏内置实现。建议：
-- 提供 Prometheus metrics 内置实现
-- 添加关键指标：RPC QPS、延迟分布、错误率、连接数、消息队列长度
-- 支持 pprof endpoint（当前已支持通过 `ProfileListenHost` 配置开启）
-
-#### 13. 链路追踪
-
-当前消息中有 `trace` 字段但未充分利用。建议：
-- 集成 OpenTelemetry
-- 自动传播 trace context
-- 支持 span 的创建和上报
-
-### 五、开发体验层面
-
-#### 14. 配置验证
-
-当前配置系统缺乏校验机制，建议：
-- 支持配置项的类型校验和范围校验
-- 启动时校验必填配置项
-- 配置变更时校验新值合法性
-
-#### 15. RPC 接口文档自动生成
-
-当前 RPC 方法通过 `Rpc` / `HttpRpc` 前缀约定，建议：
-- 提供工具自动扫描并生成 API 文档
-- 支持 HTTP RPC 的 Swagger / OpenAPI 文档生成
-
-#### 16. 测试支持
-
-当前框架缺乏测试辅助工具，建议：
-- 提供 mock 工具（mock IProxy、mock IRpcContext）
-- 提供集成测试框架（快速启动 / 停止测试节点）
-- 为 Service 提供独立的单元测试运行环境
+| # | 主题 | 优先级 | 说明 |
+|---|------|--------|------|
+| 8 | 高频对象池化 | P1 | `message`/`rpcContext`/`promise`/`[]byte` 等 `sync.Pool` 池化 |
+| 9 | 反射热点优化 | P1 | `reflect.Value.Call` 构建 dispatch 缓存，降低 CPU 开销 |
+| 10 | 链路追踪（OpenTelemetry） | P2 | `trace_id` 跨节点传播 + Span 上报 |
+| 11 | 服务发现与注册中心 | P2 | 支持 etcd / Consul / ZooKeeper 等 |
+| 12 | Node 分层解耦 | P2 | 传输/路由/编解码/会话管理可替换 |
+| 13 | 连接管理增强 | P2 | 指数退避重连、连接池、心跳超时检测 |
+| 14 | 配置验证 | P2 | 配置项类型/范围校验，启动期必填校验 |
+| 15 | RPC 文档生成 | P2 | 自动扫描生成 API 文档、HTTP RPC OpenAPI |
+| 16 | 测试支持 | P2 | Mock 工具 + 集成测试框架 + 单元测试环境 |

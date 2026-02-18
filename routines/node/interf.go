@@ -48,3 +48,14 @@ type IMetricCollector interface {
 	// Histogram 直方图，累加，但值为浮点数，可为正负
 	Histogram(name string, val float64)
 }
+
+// ICodec RPC 消息体编解码接口，用于 TCP 二进制协议的参数序列化。
+// HTTP RPC 始终使用 JSON（因 Content-Type 语义绑定），不受此接口影响。
+type ICodec interface {
+	// Marshal 将对象编码为字节串。
+	Marshal(v any) ([]byte, error)
+	// Unmarshal 将字节串解码到对象。
+	Unmarshal(data []byte, v any) error
+	// Name 返回编解码器名称（如 "json"、"msgpack"），用于日志与调试。
+	Name() string
+}
