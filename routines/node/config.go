@@ -129,6 +129,18 @@ func (ss *Node) postInitOptions() error {
 		}
 	}
 
+	// 健康检查端点，供注册中心或负载均衡探活
+	ss.handleRequestMethod("/health", http.MethodGet, func(ctx *fasthttp.RequestCtx) {
+		if ss.IsDraining() {
+			ctx.SetStatusCode(fasthttp.StatusServiceUnavailable)
+			ctx.SetBodyString(`{"status":"draining"}`)
+		} else {
+			ctx.SetStatusCode(fasthttp.StatusOK)
+			ctx.SetBodyString(`{"status":"ok"}`)
+		}
+		ctx.SetContentType("application/json")
+	})
+
 	task.Execute(func() {
 		if err := srv.Serve(ss.httpListener); err != nil {
 			ss.logger.Infof("http listener stopped: %+v", err)

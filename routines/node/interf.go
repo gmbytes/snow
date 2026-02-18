@@ -59,3 +59,13 @@ type ICodec interface {
 	// Name 返回编解码器名称（如 "json"、"msgpack"），用于日志与调试。
 	Name() string
 }
+
+// IServiceDiscovery 服务发现接口，用于运行时动态解析服务名到节点地址。
+// 未配置时框架回退到静态配置表（Config.Nodes），二者可共存。
+type IServiceDiscovery interface {
+	// Resolve 根据服务名解析目标节点地址。
+	// 返回 AddrInvalid 或 error 时框架回退到静态表查找。
+	Resolve(serviceName string) (INodeAddr, error)
+	// Deregister 停机时注销自身（由 Node.Stop 调用）。传入当前节点地址和服务列表。
+	Deregister(nodeAddr INodeAddr, services []string)
+}

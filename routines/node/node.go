@@ -77,6 +77,10 @@ type RegisterOption struct {
 	// Codec TCP RPC 参数编解码器，默认 JsonCodec（基于 xjson）。
 	// HTTP RPC 始终使用 JSON，不受此字段影响。
 	Codec ICodec
+	// ServiceDiscovery 可选的服务发现实现（etcd / Consul / ZooKeeper 等）。
+	// 配置后 CreateProxy 优先通过 Discovery 解析服务地址；
+	// 未配置或解析失败时回退到静态配置表。
+	ServiceDiscovery IServiceDiscovery
 }
 
 type ServiceRegisterInfo struct {
@@ -417,6 +421,15 @@ func (ss *Node) startProfileInterface() {
 
 func (ss *Node) Stop(ctx context.Context, wg *xsync.TimeoutWaitGroup) {
 	wg.Add(1)
+
+	if disc := ss.regOpt.ServiceDiscovery; disc != nil {
+		var svcNames []string
+		for name := range ss.name2Addr {
+			svcNames = append(svcNames, name)
+		}
+		disc.Deregister(Config.CurNodeAddr, svcNames)
+	}
+
 	ss.beginDrain()
 	ss.waitDrain()
 	ss.cancel()

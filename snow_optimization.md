@@ -319,23 +319,88 @@ Logging:
 
 ## 5. P2：架构演进与工程化
 
-### 5.1 Node 分层解耦
 
-**目标**
-- 让 `node` 的传输、路由、编解码、会话管理可替换，减少对 Host 强绑定。
 
-**建议分层**
-- `node/api`：业务可见接口（Service/Proxy/Context）
-- `node/runtime`：调度与生命周期
-- `node/transport`：tcp/http/memory
-- `node/codec`：编解码
-- `node/discovery`：可选服务发现
+### 5.1 服务发现与动态路由
 
-### 5.2 服务发现与动态路由（可选）
+**当前进展（已落地：基础版）**
 
-**建议**
-- 增加静态表 + 注册中心双模式。
-- 支持健康检查、剔除与自动恢复。
+**一、`IServiceDiscovery` 接口**
+
+已在 `routines/node/interf.go` 定义服务发现抽象：
+
+```go
+type IServiceDiscovery interface {
+    // Resolve 根据服务名解析目标节点地址。
+    // 返回 AddrInvalid 或 error 时框架回退到静态表查找。
+    Resolve(serviceName string) (INodeAddr, error)
+    // Deregister 停机时注销自身（由 Node.Stop 调用）。
+    Deregister(nodeAddr INodeAddr, services []string)
+}
+```
+
+**二、静态表 + Discovery 双模式**
+
+`Service.createProxy()` 路由决策已改为两级：
+
+| 优先级 | 来源 | 条件 |
+|--------|------|------|
+| 1 | `IServiceDiscovery.Resolve()` | `RegisterOption.ServiceDiscovery` 不为 nil 且解析成功 |
+| 2 | 静态配置表 `Config.Nodes` | Discovery 未配置或解析失败时回退 |
+
+- 本地服务（`CurNodeMap` 命中）始终走本地，不经过 Discovery。
+- Discovery 返回的地址自动判定本地/远端，与静态表行为一致。
+
+**三、健康检查端点**
+
+`Node.postInitOptions` 自动挂载 `GET /health`：
+
+| 状态 | HTTP Code | 响应体 |
+|------|-----------|--------|
+| 正常 | 200 | `{"status":"ok"}` |
+| Drain 中 | 503 | `{"status":"draining"}` |
+
+注册中心可通过此端点探活，Drain 时自动返回 503 触发摘除。
+
+**四、停机自动注销**
+
+`Node.Stop()` 在进入 Drain 前，自动调用 `IServiceDiscovery.Deregister()`，将当前节点的所有服务从注册中心摘除。
+
+**五、用户接入方式**
+
+```go
+// 自定义实现（以 etcd 为例）
+type EtcdDiscovery struct { /* ... */ }
+func (d *EtcdDiscovery) Resolve(name string) (node.INodeAddr, error) { /* ... */ }
+func (d *EtcdDiscovery) Deregister(addr node.INodeAddr, svcs []string) { /* ... */ }
+
+// 注册时传入
+node.AddNode(b, func() *node.RegisterOption {
+    return &node.RegisterOption{
+        ServiceDiscovery: &EtcdDiscovery{Endpoints: []string{"127.0.0.1:2379"}},
+        // ...
+    }
+})
+```
+
+**兼容策略**
+
+- 默认 `ServiceDiscovery = nil`，行为与改造前完全一致（纯静态表）。
+- Discovery 解析失败自动回退静态表，不影响已有配置。
+- `GET /health` 端点无条件挂载，不依赖 Discovery 是否配置。
+
+**验收结果（当前）**
+
+- `CreateProxy("Name")` 等已有调用方式零变更，用户无感。
+- 配置 `ServiceDiscovery` 后，远端服务地址可由注册中心动态下发。
+- 停机时自动注销 + `/health` 返回 503，注册中心可及时摘除。
+- 编译通过，无 breaking change。
+
+**后续增强（待办）**
+
+- 提供官方 etcd / Consul 插件实现。
+- `Resolve` 结果缓存 + TTL，减少注册中心查询频率。
+- 支持 `Watch` 模式（主动推送地址变更），替代每次 Resolve 轮询。
 
 ### 5.3 测试与文档工具化
 

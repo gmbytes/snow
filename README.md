@@ -16,6 +16,7 @@
 - **Context 全链路传播**：RPC 超时、取消、Trace 统一由 `context.Context` 驱动，Service 停止时自动取消所有进行中的 RPC
 - **统一错误模型**：结构化 `ErrorCode` + `Error` 包装，支持 `errors.Is/As`，线上日志可按错误码聚合
 - **内置可观测性**：默认 Prometheus 指标采集（QPS、P95/P99、错误率、在途请求数、重连次数），自动暴露 `/metrics` 端点
+- **服务发现**：`IServiceDiscovery` 接口支持 etcd / Consul 等注册中心接入，与静态配置表双模式共存；内置 `/health` 端点供探活
 - **版本管理**：SemVer 语义化版本解析与比较，支持 prerelease / build 元数据
 - **自动服务注册**：泛型 `Register[T, U]()` 在 init() 中声明式注册，`RegisterService()` 一键挂载
 
@@ -56,7 +57,8 @@ snow/
 │   └── node/                      # 分布式节点（RPC、消息、服务）
 └── examples/                      # 示例
     ├── minimal/                   # 最小示例
-    └── pingpong/                  # Ping-Pong RPC 示例
+    ├── pingpong/                  # Ping-Pong RPC 示例
+    └── discovery/                 # 服务发现示例
 ```
 
 ## 快速开始
@@ -482,7 +484,7 @@ node.AddNode(b, func() *node.RegisterOption {
 
 #### 动态地址管理
 
-`AddrUpdater` 支持运行时动态更新节点地址，适用于服务发现场景：
+`AddrUpdater` 支持运行时动态更新节点地址，适用于轻量级服务发现场景：
 
 ```go
 updater := node.NewNodeAddrUpdater(nAddr, func(ch chan<- node.Addr) {
@@ -491,6 +493,121 @@ updater := node.NewNodeAddrUpdater(nAddr, func(ch chan<- node.Addr) {
 updater.Start()
 currentAddr := updater.GetNodeAddr()
 ```
+
+#### 服务发现（`IServiceDiscovery`）
+
+通过 `RegisterOption.ServiceDiscovery` 可接入 etcd / Consul / ZooKeeper 等注册中心，与静态配置表双模式共存：
+
+```go
+type IServiceDiscovery interface {
+    Resolve(serviceName string) (INodeAddr, error)
+    Deregister(nodeAddr INodeAddr, services []string)
+}
+```
+
+- `CreateProxy("Name")` 优先通过 Discovery 解析，失败时回退静态表
+- 停机时自动调用 `Deregister` 注销服务
+- 内置 `GET /health` 端点（正常 200，Drain 中 503），供注册中心探活
+
+未配置时行为与静态表完全一致，零 breaking change。
+
+**完整示例**（见 `examples/discovery/`）：
+
+```go
+// discovery.go — 实现 IServiceDiscovery 接口
+type MapDiscovery struct {
+    mu       sync.RWMutex
+    registry map[string]node.INodeAddr
+}
+
+func NewMapDiscovery() *MapDiscovery {
+    return &MapDiscovery{registry: make(map[string]node.INodeAddr)}
+}
+
+// Register 注册服务地址（模拟注册中心写入）
+func (d *MapDiscovery) Register(serviceName, host string, port int) error {
+    addr, err := node.NewNodeAddr(host, port)
+    if err != nil {
+        return err
+    }
+    d.mu.Lock()
+    d.registry[serviceName] = addr
+    d.mu.Unlock()
+    return nil
+}
+
+// Resolve 实现 node.IServiceDiscovery
+func (d *MapDiscovery) Resolve(serviceName string) (node.INodeAddr, error) {
+    d.mu.RLock()
+    defer d.mu.RUnlock()
+    if addr, ok := d.registry[serviceName]; ok {
+        return addr, nil
+    }
+    return nil, fmt.Errorf("service %q not found", serviceName)
+}
+
+// Deregister 实现 node.IServiceDiscovery，停机时由框架自动调用
+func (d *MapDiscovery) Deregister(nodeAddr node.INodeAddr, services []string) {
+    d.mu.Lock()
+    defer d.mu.Unlock()
+    for _, name := range services {
+        delete(d.registry, name)
+    }
+}
+```
+
+```go
+// main.go — 注入 ServiceDiscovery
+func main() {
+    disc := NewMapDiscovery()
+    disc.Register("Pong", "127.0.0.1", 8000)
+
+    b := builder.NewDefaultBuilder()
+    host.AddHostedRoutine[*ignore_input.IgnoreInput](b)
+    host.AddOption[*node.Option](b, "Node")
+    host.AddOptionFactory[*node.Option](b, func() *node.Option {
+        return &node.Option{
+            BootName: "MyNode",
+            LocalIP:  "127.0.0.1",
+            Nodes: map[string]*node.ElementOption{
+                "MyNode": {
+                    Port: 8000, HttpPort: 8080,
+                    Services: []string{"Ping", "Pong"},
+                },
+            },
+        }
+    })
+
+    node.AddNode(b, func() *node.RegisterOption {
+        return &node.RegisterOption{
+            ServiceRegisterInfos: []*node.ServiceRegisterInfo{
+                node.CheckedServiceRegisterInfoName[ping](1, "Ping"),
+                node.CheckedServiceRegisterInfoName[pong](2, "Pong"),
+            },
+            ServiceDiscovery: disc, // 注入服务发现
+        }
+    })
+
+    host.Run(b.Build())
+}
+```
+
+```go
+// ping.go — 调用方代码无需任何改动
+func (ss *ping) Start(_ any) {
+    // CreateProxy 内部自动走 Discovery.Resolve("Pong")，
+    // 失败时回退静态表。对业务完全透明。
+    ss.pongProxy = ss.CreateProxy("Pong")
+    // ... 同普通 Ping-Pong 示例
+}
+```
+
+启动后：
+- `disc.Resolve("Pong")` 返回 `127.0.0.1:8000`，`CreateProxy` 据此路由
+- `GET http://127.0.0.1:8080/health` 返回 `{"status":"ok"}`
+- 停机时框架自动调用 `disc.Deregister()`，从注册表中摘除服务
+
+生产环境只需将 `MapDiscovery` 替换为 etcd / Consul 实现即可，业务代码零变更。
 
 ### 6. 时间轮 (`routines/node/timewheel`)
 
@@ -694,17 +811,16 @@ Node:
 | 5 | 基础可观测性 | **已实现** | 内置 Prometheus 采集 + `/metrics` 自动挂载 + 统一日志字段 |
 | 6 | 编解码可插拔（ICodec） | **已实现** | TCP RPC 序列化接口化，默认 JSON，可替换 |
 | 7 | 日志写入背压 | **已实现** | 三种背压策略 + 丢弃计数 + 周期告警 |
+| 8 | 服务发现与动态路由 | **已实现** | `IServiceDiscovery` 接口 + 静态表双模式 + `/health` 探活 + 停机自动注销 |
 
 ### 待推进
 
 | # | 主题 | 优先级 | 说明 |
 |---|------|--------|------|
-| 8 | 高频对象池化 | P1 | `message`/`rpcContext`/`promise`/`[]byte` 等 `sync.Pool` 池化 |
-| 9 | 反射热点优化 | P1 | `reflect.Value.Call` 构建 dispatch 缓存，降低 CPU 开销 |
-| 10 | 链路追踪（OpenTelemetry） | P2 | `trace_id` 跨节点传播 + Span 上报 |
-| 11 | 服务发现与注册中心 | P2 | 支持 etcd / Consul / ZooKeeper 等 |
-| 12 | Node 分层解耦 | P2 | 传输/路由/编解码/会话管理可替换 |
-| 13 | 连接管理增强 | P2 | 指数退避重连、连接池、心跳超时检测 |
-| 14 | 配置验证 | P2 | 配置项类型/范围校验，启动期必填校验 |
-| 15 | RPC 文档生成 | P2 | 自动扫描生成 API 文档、HTTP RPC OpenAPI |
-| 16 | 测试支持 | P2 | Mock 工具 + 集成测试框架 + 单元测试环境 |
+| 9 | 高频对象池化 | P1 | `message`/`rpcContext`/`promise`/`[]byte` 等 `sync.Pool` 池化 |
+| 10 | 反射热点优化 | P1 | `reflect.Value.Call` 构建 dispatch 缓存，降低 CPU 开销 |
+| 11 | 链路追踪（OpenTelemetry） | P2 | `trace_id` 跨节点传播 + Span 上报 |
+| 12 | 连接管理增强 | P2 | 指数退避重连、连接池、心跳超时检测 |
+| 13 | 配置验证 | P2 | 配置项类型/范围校验，启动期必填校验 |
+| 14 | RPC 文档生成 | P2 | 自动扫描生成 API 文档、HTTP RPC OpenAPI |
+| 15 | 测试支持 | P2 | Mock 工具 + 集成测试框架 + 单元测试环境 |

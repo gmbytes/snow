@@ -706,28 +706,41 @@ func (ss *Service) createProxy(updater *AddrUpdater, nAddr Addr, sAddr int32, na
 					return nil
 				}
 			} else if nAddr == AddrInvalid && Config.CurNodeMap[name] {
-				// 自动查找且本地存在需要的服务
 				nAddr = AddrLocal
 			} else if nAddr == AddrInvalid || nAddr == AddrRemote {
-			loop:
-				for _, ni := range Config.Nodes {
-					if ni.Name == Config.CurNodeName {
-						continue
+				resolved := false
+				if disc := ss.node.regOpt.ServiceDiscovery; disc != nil {
+					if addr, err := disc.Resolve(name); err == nil && addr != nil && addr != AddrInvalid {
+						if a, ok := addr.(Addr); ok {
+							if a.IsLocalhost() || a == Config.CurNodeAddr {
+								nAddr = AddrLocal
+							} else {
+								nAddr = a
+							}
+							resolved = true
+						}
 					}
+				}
+				if !resolved {
+				loop:
+					for _, ni := range Config.Nodes {
+						if ni.Name == Config.CurNodeName {
+							continue
+						}
 
-					for _, n := range ni.Services {
-						if n == name && len(ni.Host) > 0 {
-							// 远端节点的服务，优先使用 Http
-							if ni.HttpPort > 0 {
-								protocol := "http"
-								if ni.UseHttps {
-									protocol = "https"
+						for _, n := range ni.Services {
+							if n == name && len(ni.Host) > 0 {
+								if ni.HttpPort > 0 {
+									protocol := "http"
+									if ni.UseHttps {
+										protocol = "https"
+									}
+									urlBase = fmt.Sprintf("%v://%s:%v", protocol, ni.Host, ni.HttpPort)
+									break loop
+								} else if ni.Port > 0 {
+									nAddr = ni.NodeAddr
+									break loop
 								}
-								urlBase = fmt.Sprintf("%v://%s:%v", protocol, ni.Host, ni.HttpPort)
-								break loop
-							} else if ni.Port > 0 {
-								nAddr = ni.NodeAddr
-								break loop
 							}
 						}
 					}
