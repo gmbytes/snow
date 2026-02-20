@@ -711,8 +711,7 @@ func (ss *Node) nodeStartListen() {
 				time.Sleep(tempDelay)
 				continue
 			}
-
-			slog.Fatalf("accept error: %v", err)
+			return
 		}
 		tempDelay = 0
 
