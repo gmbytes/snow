@@ -21,6 +21,8 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+type ServiceName = string
+
 var _ iService = (*Service)(nil)
 var _ iMessageSender = (*Service)(nil)
 var _ ticker.PoolItem = (*Service)(nil)
@@ -45,8 +47,8 @@ type tagFunc struct {
 }
 
 type Service struct {
-	node *Node
-	ctx  context.Context
+	node      *Node
+	ctx       context.Context
 	ctxCancel context.CancelFunc
 
 	methodMap     map[string]reflect.Value
