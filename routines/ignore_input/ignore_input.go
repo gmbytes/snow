@@ -3,8 +3,8 @@ package ignore_input
 import (
 	"bufio"
 	"context"
-	"github.com/gmbytes/snow/core/host"
-	"github.com/gmbytes/snow/core/xsync"
+	"github.com/gmbytes/snow/pkg/host"
+	"github.com/gmbytes/snow/pkg/xsync"
 	"os"
 	"sync/atomic"
 	"time"

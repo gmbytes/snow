@@ -1,0 +1,48 @@
+image: golang:1.26
+
+stages:
+  - ci
+  - cd
+  - notify
+
+variables:
+  GOPROXY: "https://goproxy.cn,direct"
+  GOSUMDB: "sum.golang.org"
+  GOCACHE: "${CI_PROJECT_DIR}/.cache/go-build"
+  GOMODCACHE: "${CI_PROJECT_DIR}/.go/pkg/mod"
+
+cache:
+  - key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .go/pkg/mod/
+    policy: pull-push
+  - key: "go-build-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .go/cache/go-build/
+    policy: pull-push
+
+before_script:
+  - mkdir -p .go/pkg/mod
+  - mkdir -p .go/cache/go-build
+
+ci_job:
+  stage: ci
+  script:
+    - pwd
+    - make tools
+    - make ci
+
+cd_job:
+  stage: cd
+  script:
+    - echo "由Jenkins触发CD流程"
+    - pwd
+    - bash -e scripts/cd.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger" && $PROJECT_OPERATING_MODE == "deploy"
+
+notify_job:
+  stage: notify
+  script:
+    - pwd
+    - bash -e scripts/notify.sh

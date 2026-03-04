@@ -9,8 +9,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/gmbytes/snow/core/task"
-	"github.com/gmbytes/snow/core/xjson"
+	"github.com/gmbytes/snow/pkg/task"
+	"github.com/gmbytes/snow/pkg/xjson"
 )
 
 const (

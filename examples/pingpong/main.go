@@ -1,8 +1,10 @@
 package main
 
 import (
-	"github.com/gmbytes/snow/core/host"
-	"github.com/gmbytes/snow/core/host/builder"
+	"context"
+
+	"github.com/gmbytes/snow/pkg/host"
+	"github.com/gmbytes/snow/pkg/host/builder"
 	"github.com/gmbytes/snow/routines/ignore_input"
 	"github.com/gmbytes/snow/routines/node"
 )
@@ -32,5 +34,5 @@ func main() {
 		}
 	})
 
-	host.Run(b.Build())
+	host.Run(b.Build(), context.Background())
 }

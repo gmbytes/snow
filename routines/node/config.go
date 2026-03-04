@@ -2,13 +2,14 @@ package node
 
 import (
 	"context"
-	"github.com/gmbytes/snow/core/task"
-	"github.com/valyala/fasthttp"
 	"net"
 	"net/http"
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/gmbytes/snow/pkg/task"
+	"github.com/valyala/fasthttp"
 )
 
 type nodeInfo struct {

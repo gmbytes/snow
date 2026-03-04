@@ -17,3 +17,7 @@
 # vendor/
 
 logs/
+
+# go.work 由 make init-workspace 生成，不提交
+go.work
+go.work.sum

@@ -21,19 +21,18 @@ type rpcContext struct {
 
 func newRpcContext(parentCtx context.Context, srv *Service, mRsp *message, reqSess, reqSrc int32, reqNodeAddr Addr, reqCb func(m *message), flushCb func()) *rpcContext {
 	ctx, cancel := context.WithCancel(parentCtx)
-	return &rpcContext{
-		ctx:    ctx,
-		cancel: cancel,
-
-		reqSess:     reqSess,
-		reqSrc:      reqSrc,
-		reqNodeAddr: reqNodeAddr,
-		reqCb:       reqCb,
-
-		mRsp:    mRsp,
-		srv:     srv,
-		flushCb: flushCb,
-	}
+	rc := rpcContextPool.Get().(*rpcContext)
+	rc.ctx = ctx
+	rc.cancel = cancel
+	rc.reqSess = reqSess
+	rc.reqSrc = reqSrc
+	rc.reqNodeAddr = reqNodeAddr
+	rc.reqCb = reqCb
+	rc.mRsp = mRsp
+	rc.srv = srv
+	rc.flushed = false
+	rc.flushCb = flushCb
+	return rc
 }
 
 func (ss *rpcContext) Context() context.Context {
@@ -95,14 +94,34 @@ func (ss *rpcContext) flush() {
 	if reqSess > 0 {
 		if reqCb != nil { // local service message
 			reqCb(mRsp)
+			mRsp = nil
 		} else if reqNodeAddr != 0 { // must be remote message
 			sender := nodeGetMessageSender(reqNodeAddr, reqSrc, false, nil)
 			if sender != nil {
 				sender.send(mRsp)
+				// mRsp 交给 sender 管理，由 remoteHandle.onTick 在序列化后调用 m.clear() 归还
+				mRsp = nil
 			} else {
 				ss.srv.Errorf("service at nAddr(%v) sAddr(%#8x) not found when rpc return", reqNodeAddr, reqSrc)
-				mRsp.clear()
+				releaseMessage(mRsp)
+				mRsp = nil
 			}
 		} // else is a local post
 	}
+
+	if mRsp != nil {
+		releaseMessage(mRsp)
+	}
+
+	ss.releaseToPool()
+}
+
+func (ss *rpcContext) releaseToPool() {
+	ss.ctx = nil
+	ss.cancel = nil
+	ss.reqCb = nil
+	ss.mRsp = nil
+	ss.srv = nil
+	ss.flushCb = nil
+	rpcContextPool.Put(ss)
 }

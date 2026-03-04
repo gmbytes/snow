@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# pre-commit hook：提交前运行 lint + test，任一失败则阻止提交。
+set -euo pipefail
+
+echo "=== pre-commit: running lint ==="
+make lint
+echo "=== pre-commit: running test ==="
+make test
+
+echo "=== pre-commit: all checks passed ==="

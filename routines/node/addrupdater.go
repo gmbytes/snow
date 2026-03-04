@@ -1,8 +1,9 @@
 package node
 
 import (
-	"github.com/gmbytes/snow/core/task"
 	"sync/atomic"
+
+	"github.com/gmbytes/snow/pkg/task"
 )
 
 type AddrUpdater struct {

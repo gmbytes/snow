@@ -1,0 +1,72 @@
+package internal
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"unsafe"
+
+	"github.com/gmbytes/snow/pkg/host"
+	"github.com/gmbytes/snow/pkg/logging"
+	"github.com/gmbytes/snow/pkg/xsync"
+)
+
+var _ host.IHostedRoutine = (*ConsoleLifetimeRoutine)(nil)
+
+type ConsoleLifetimeRoutine struct {
+	logger      logging.ILogger
+	ctx         context.Context
+	cancel      func()
+	wg          *sync.WaitGroup
+	application host.IHostApplication
+}
+
+func (ss *ConsoleLifetimeRoutine) Construct(application host.IHostApplication, logger *logging.Logger[ConsoleLifetimeRoutine]) {
+	ss.application = application
+	if logger != nil {
+		ss.logger = logger.Get(func(data *logging.LogData) {
+			data.Name = "ConsoleLifetime"
+			data.ID = fmt.Sprintf("%X", unsafe.Pointer(ss))
+		})
+	}
+}
+
+func (ss *ConsoleLifetimeRoutine) Start(_ context.Context, wg *xsync.TimeoutWaitGroup) {
+	ss.ctx, ss.cancel = context.WithCancel(context.Background())
+	ss.wg = &sync.WaitGroup{}
+	ss.wg.Add(1)
+	wg.Add(1)
+	go func() {
+		wg.Done()
+
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+		select {
+		case <-sigs:
+			if ss.logger != nil {
+				ss.logger.Infof("SHUTDOWN APPLICATION BY SIGNAL...")
+			}
+		case <-ss.ctx.Done():
+			if ss.logger != nil {
+				ss.logger.Infof("SHUTDOWN APPLICATION")
+			}
+		}
+		ss.wg.Done()
+
+		if ss.application != nil {
+			ss.application.StopApplication()
+		}
+	}()
+}
+
+func (ss *ConsoleLifetimeRoutine) Stop(_ context.Context, wg *xsync.TimeoutWaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	ss.cancel()
+	ss.wg.Wait()
+}

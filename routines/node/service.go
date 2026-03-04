@@ -13,12 +13,13 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/gmbytes/snow/core/debug"
-	"github.com/gmbytes/snow/core/logging"
-	"github.com/gmbytes/snow/core/task"
-	"github.com/gmbytes/snow/core/ticker"
-	"github.com/gmbytes/snow/core/xjson"
+	"github.com/gmbytes/snow/internal/debug"
+	"github.com/gmbytes/snow/internal/ticker"
+	"github.com/gmbytes/snow/pkg/logging"
+	"github.com/gmbytes/snow/pkg/task"
+	"github.com/gmbytes/snow/pkg/xjson"
 	"github.com/valyala/fasthttp"
+	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
 type ServiceName = string
@@ -513,7 +514,7 @@ func (ss *Service) send(msg *message) bool {
 
 		if ss.msgBuffer != nil {
 			for _, m := range ss.msgBuffer {
-				m.clear()
+				releaseMessage(m)
 			}
 			ss.msgBuffer = nil
 		}
@@ -555,7 +556,7 @@ func (ss *Service) doDispatch(mReq *message) {
 				mc.Gauge("[ServiceInFlight] "+ss.name, ss.InFlightRequests())
 			}
 		}
-		mReq.clear()
+		releaseMessage(mReq)
 
 		if err := recover(); err != nil {
 			buf := debug.StackInfo()
@@ -585,13 +586,19 @@ func (ss *Service) doDispatch(mReq *message) {
 		parentCtx = context.Background()
 	}
 
-	mRsp := &message{
-		nAddr: mReq.nAddr,
-		src:   ss.sAddr,
-		dst:   mReq.src,
-		sess:  -mReq.sess,
-		trace: mReq.trace,
+	if tr := ss.node.regOpt.Tracer; tr != nil {
+		var span otelTrace.Span
+		parentCtx, span = tr.Start(parentCtx, "rpc/"+ss.name+"/"+funcName,
+			otelTrace.WithSpanKind(otelTrace.SpanKindServer))
+		defer span.End()
 	}
+
+	mRsp := acquireMessage()
+	mRsp.nAddr = mReq.nAddr
+	mRsp.src = ss.sAddr
+	mRsp.dst = mReq.src
+	mRsp.sess = -mReq.sess
+	mRsp.trace = mReq.trace
 
 	if mc != nil {
 		mc.Counter("[ServiceRpc] "+ss.name, 1)

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gmbytes/snow/core/logging/slog"
+	"github.com/gmbytes/snow/pkg/logging/slog"
 	"github.com/gmbytes/snow/routines/node"
 )
 

@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/gmbytes/snow/core/logging/slog"
-	"github.com/gmbytes/snow/core/task"
-	"github.com/gmbytes/snow/core/ticker"
+	"github.com/gmbytes/snow/internal/ticker"
+	"github.com/gmbytes/snow/pkg/logging/slog"
+	"github.com/gmbytes/snow/pkg/task"
 	"io"
 	"net"
 	"strings"
@@ -81,13 +81,12 @@ func (ss *remoteHandle) send(m *message) bool {
 		// 关闭时，若有回调，则立即调用
 		if m != nil {
 			if m.cb != nil {
-				em := &message{
-					trace: m.trace,
-					err:   WrapError(ErrTransport, "remoteHandle.send", ErrRemoteDisconnected),
-				}
+				em := acquireMessage()
+				em.trace = m.trace
+				em.err = WrapError(ErrTransport, "remoteHandle.send", ErrRemoteDisconnected)
 				m.cb(em)
 			}
-			m.clear()
+			releaseMessage(m)
 		}
 
 		return false
@@ -157,10 +156,9 @@ func (ss *remoteHandle) closeAllSession() {
 		value, ok := ss.sessCb.LoadAndDelete(key)
 		if ok {
 			v := value.(*session)
-			m := &message{
-				err:   WrapError(ErrTransport, "remoteHandle.closeAllSession", ErrRemoteDisconnected),
-				trace: v.trace,
-			}
+			m := acquireMessage()
+			m.err = WrapError(ErrTransport, "remoteHandle.closeAllSession", ErrRemoteDisconnected)
+			m.trace = v.trace
 			v.cb(m)
 			v.cb = nil
 		}
@@ -190,10 +188,9 @@ func (ss *remoteHandle) onTick() {
 			if !v.timeout.Equal(zero) && v.timeout.Before(now) {
 				ss.sessCb.Delete(key)
 
-				m := &message{
-					trace: v.trace,
-					err:   WrapError(ErrTimeout, "remoteHandle.onTick", ErrRequestTimeoutRemote),
-				}
+				m := acquireMessage()
+				m.trace = v.trace
+				m.err = WrapError(ErrTimeout, "remoteHandle.onTick", ErrRequestTimeoutRemote)
 				v.cb(m)
 			}
 			return true
@@ -210,7 +207,7 @@ func (ss *remoteHandle) onTick() {
 		for _, m := range msgList {
 			bs, err := m.marshal()
 			if m != nil {
-				m.clear()
+				releaseMessage(m)
 			}
 			if err != nil {
 				slog.Errorf("message marshal %v", err.Error())
@@ -315,7 +312,7 @@ func (ss *remoteHandle) doDivide(data []byte) []byte {
 		}
 		msgLen := int(binary.LittleEndian.Uint32(data[:4]))
 		if msgLen < 4 {
-			slog.Errorf("net message from %v format error", ss.nAddr)
+			slog.Errorf("net_pkg message from %v format error", ss.nAddr)
 			return nil
 		}
 		if len(data) < msgLen {
@@ -324,9 +321,10 @@ func (ss *remoteHandle) doDivide(data []byte) []byte {
 		msg := make([]byte, msgLen)
 		copy(msg, data)
 
-		m := &message{}
+		m := acquireMessage()
 		if err := m.unmarshal(msg); err != nil {
-			slog.Errorf("net message from %v decode error", ss.nAddr)
+			slog.Errorf("net_pkg message from %v decode error", ss.nAddr)
+			releaseMessage(m)
 			return nil
 		}
 
@@ -356,33 +354,30 @@ func (ss *remoteHandle) doDispatch(m *message) {
 			cbSess.cb = nil
 		} else {
 			slog.Errorf("no session(%v) callback found, message data: %+v", -m.sess, m)
-			m.clear()
+			releaseMessage(m)
 		}
 		return
 	}
 
 	if m.src == 0 {
-		// error occurs
 
 		slog.Warnf("remote error, code: %+v", m.getError())
-		m.clear()
+		releaseMessage(m)
 		return
 	}
 
-	// request
 	if ss.node != nil && ss.node.IsDraining() {
 		if m.sess > 0 {
-			mm := &message{
-				nAddr: m.nAddr,
-				src:   0,
-				dst:   m.src,
-				sess:  -m.sess,
-				trace: m.trace,
-				err:   NewError(ErrDraining, "node is draining, reject new request"),
-			}
+			mm := acquireMessage()
+			mm.nAddr = m.nAddr
+			mm.src = 0
+			mm.dst = m.src
+			mm.sess = -m.sess
+			mm.trace = m.trace
+			mm.err = NewError(ErrDraining, "node is draining, reject new request")
 			ss.send(mm)
 		}
-		m.clear()
+		releaseMessage(m)
 		return
 	}
 
@@ -391,15 +386,14 @@ func (ss *remoteHandle) doDispatch(m *message) {
 		srv.send(m)
 	} else {
 		slog.Warnf("remote(%v) call service(%d) which not found, message data: %+v", ss.nAddr, m.dst, m)
-		mm := &message{
-			nAddr: m.nAddr,
-			src:   0,
-			dst:   m.src,
-			sess:  -m.sess,
-			trace: m.trace,
-			err:   NewError(ErrServiceNotFound, "invalid service address"),
-		}
+		mm := acquireMessage()
+		mm.nAddr = m.nAddr
+		mm.src = 0
+		mm.dst = m.src
+		mm.sess = -m.sess
+		mm.trace = m.trace
+		mm.err = NewError(ErrServiceNotFound, "invalid service address")
 		ss.send(mm)
-		m.clear()
+		releaseMessage(m)
 	}
 }

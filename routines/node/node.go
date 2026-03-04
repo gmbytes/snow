@@ -18,19 +18,20 @@ import (
 	"unsafe"
 
 	"github.com/valyala/fasthttp"
+	"go.opentelemetry.io/otel/trace"
 
-	"github.com/gmbytes/snow/core/host"
-	"github.com/gmbytes/snow/core/injection"
-	"github.com/gmbytes/snow/core/kvs"
-	"github.com/gmbytes/snow/core/logging"
-	"github.com/gmbytes/snow/core/logging/slog"
-	"github.com/gmbytes/snow/core/metrics"
-	"github.com/gmbytes/snow/core/option"
-	"github.com/gmbytes/snow/core/task"
-	"github.com/gmbytes/snow/core/ticker"
-	"github.com/gmbytes/snow/core/version"
-	"github.com/gmbytes/snow/core/xnet"
-	"github.com/gmbytes/snow/core/xsync"
+	"github.com/gmbytes/snow/internal/kvs"
+	"github.com/gmbytes/snow/internal/ticker"
+	"github.com/gmbytes/snow/pkg/host"
+	"github.com/gmbytes/snow/pkg/injection"
+	"github.com/gmbytes/snow/pkg/logging"
+	"github.com/gmbytes/snow/pkg/logging/slog"
+	"github.com/gmbytes/snow/pkg/metrics"
+	"github.com/gmbytes/snow/pkg/option"
+	"github.com/gmbytes/snow/pkg/task"
+	"github.com/gmbytes/snow/pkg/version"
+	"github.com/gmbytes/snow/pkg/xnet"
+	"github.com/gmbytes/snow/pkg/xsync"
 )
 
 type NodeInfo struct {
@@ -81,6 +82,10 @@ type RegisterOption struct {
 	// 配置后 CreateProxy 优先通过 Discovery 解析服务地址；
 	// 未配置或解析失败时回退到静态配置表。
 	ServiceDiscovery IServiceDiscovery
+	// Tracer 可选的 OTel Tracer，nil 表示不开启链路追踪（零开销）。
+	// 调用方需提前通过 otel.SetTracerProvider() 配置全局 TracerProvider，
+	// 或直接传入 NodeTracer() 返回的 Tracer。
+	Tracer trace.Tracer
 }
 
 type ServiceRegisterInfo struct {
@@ -879,7 +884,7 @@ func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySigChan chan
 		h.conn = conn
 
 		if err = gNode.chPreprocessor.Process(conn); err != nil {
-			slog.Warnf("send identity to server(%v) failed: %v", nAddr, err)
+			slog.Warnf("send identity to gs(%v) failed: %v", nAddr, err)
 			h.safeDelete()
 			_ = conn.Close()
 			return

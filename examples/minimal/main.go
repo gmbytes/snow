@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/gmbytes/snow/core/host"
-	"github.com/gmbytes/snow/core/host/builder"
-	"github.com/gmbytes/snow/core/logging/slog"
-	"github.com/gmbytes/snow/core/xsync"
+	"github.com/gmbytes/snow/pkg/host"
+	"github.com/gmbytes/snow/pkg/host/builder"
+	"github.com/gmbytes/snow/pkg/logging/slog"
+	"github.com/gmbytes/snow/pkg/xsync"
 	"github.com/gmbytes/snow/routines/ignore_input"
 )
 
@@ -43,5 +43,5 @@ func main() {
 	b := builder.NewDefaultBuilder()
 	host.AddHostedRoutine[*ignore_input.IgnoreInput](b)
 	host.AddHostedRoutine[*clock](b)
-	host.Run(b.Build())
+	host.Run(b.Build(), context.Background())
 }

@@ -6,6 +6,8 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+
+	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -86,6 +88,14 @@ func (ss *serviceProxy) doCall(p *promise) {
 		parentCtx = context.Background()
 	}
 
+	var spanEnd func()
+	if tr := srv.node.regOpt.Tracer; tr != nil {
+		var span otelTrace.Span
+		parentCtx, span = tr.Start(parentCtx, "rpc.call/"+p.fName,
+			otelTrace.WithSpanKind(otelTrace.SpanKindClient))
+		spanEnd = func() { span.End() }
+	}
+
 	// 统一从 Context 派生超时：若调用方未设置 deadline，施加默认超时
 	var callCtx context.Context
 	var callCancel context.CancelFunc
@@ -95,13 +105,11 @@ func (ss *serviceProxy) doCall(p *promise) {
 		callCtx, callCancel = context.WithTimeout(parentCtx, defaultTCPTimeout)
 	}
 
-	m := &message{
-		ctx:     callCtx,
-		timeout: timeoutFromContext(callCtx),
-		src:     srv.GetAddr(),
-		dst:     ss.sAddr,
-		// TODO trace id
-	}
+	m := acquireMessage()
+	m.ctx = callCtx
+	m.timeout = timeoutFromContext(callCtx)
+	m.src = srv.GetAddr()
+	m.dst = ss.sAddr
 	m.writeRequest(p.fName, p.args)
 
 	if ss.sender == nil || ss.sender.closed() {
@@ -112,6 +120,9 @@ func (ss *serviceProxy) doCall(p *promise) {
 		ss.sender = nodeGetMessageSender(ss.GetNodeAddr().(Addr), ss.sAddr, true, ch)
 	}
 	if ss.sender == nil {
+		if spanEnd != nil {
+			spanEnd()
+		}
 		callCancel()
 		if p.errCb != nil {
 			srv.Fork("proxy.err.cb", func() {
@@ -128,11 +139,14 @@ func (ss *serviceProxy) doCall(p *promise) {
 		} else {
 			p.clear()
 		}
-		m.clear()
+		releaseMessage(m)
 		return
 	}
 
 	if p.successCb == nil {
+		if spanEnd != nil {
+			spanEnd()
+		}
 		callCancel()
 		if p.finalCb != nil {
 			srv.Fork("proxy.post.finalCb", func() {
@@ -150,6 +164,9 @@ func (ss *serviceProxy) doCall(p *promise) {
 		var cbOnce sync.Once
 		cb := func(mm *message) {
 			cbOnce.Do(func() {
+				if spanEnd != nil {
+					spanEnd()
+				}
 				callCancel()
 				ss.callThen(mm, srv, p, sess)
 			})
@@ -166,10 +183,9 @@ func (ss *serviceProxy) doCall(p *promise) {
 			} else {
 				err = ErrRequestCancelled
 			}
-			om := &message{
-				trace: trace,
-				err:   err,
-			}
+			om := acquireMessage()
+			om.trace = trace
+			om.err = err
 			cb(om)
 		}()
 	}
@@ -180,6 +196,7 @@ func (ss *serviceProxy) doCall(p *promise) {
 func (ss *serviceProxy) callThen(mm *message, srv *Service, p *promise, sess int32) {
 	srv.Fork("proxy.forkCb", func() {
 		defer func() {
+			releaseMessage(mm)
 			if p.finalCb != nil {
 				p.finalCb()
 			}

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/gmbytes/snow/core/host"
+	"github.com/gmbytes/snow/pkg/host"
 )
 
 // registeredService 记录通过 Register 注册的服务

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gmbytes/snow/core/xjson"
+	"github.com/gmbytes/snow/pkg/xjson"
 )
 
 var _ IRpcContext = (*httpRpcContext)(nil)
