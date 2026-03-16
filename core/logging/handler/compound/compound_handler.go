@@ -1,0 +1,47 @@
+package compound
+
+import (
+	"github.com/gmbytes/snow/core/logging"
+	"github.com/gmbytes/snow/core/option"
+)
+
+var _ logging.ILogHandler = (*Handler)(nil)
+
+type Option struct {
+	NodeId   int    `snow:"NodeId"`   // 日志节点 Id
+	NodeName string `snow:"NodeName"` // 日志节点名
+}
+
+type Handler struct {
+	proxy []logging.ILogHandler
+	opt   *Option
+}
+
+func NewHandler() *Handler {
+	return &Handler{}
+}
+
+func (ss *Handler) Construct(opt *option.Option[*Option]) {
+	ss.opt = opt.Get()
+}
+
+func (ss *Handler) Log(data *logging.LogData) {
+	if ss.opt != nil {
+		if ss.opt.NodeId > 0 {
+			data.NodeID = ss.opt.NodeId
+		}
+		if len(ss.opt.NodeName) > 0 {
+			data.NodeName = ss.opt.NodeName
+		}
+	}
+
+	for _, handler := range ss.proxy {
+		if handler != nil {
+			handler.Log(data)
+		}
+	}
+}
+
+func (ss *Handler) AddHandler(logger logging.ILogHandler) {
+	ss.proxy = append(ss.proxy, logger)
+}

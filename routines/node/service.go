@@ -16,6 +16,7 @@ import (
 	"github.com/gmbytes/snow/internal/debug"
 	"github.com/gmbytes/snow/internal/ticker"
 	"github.com/gmbytes/snow/pkg/logging"
+	"github.com/gmbytes/snow/pkg/logging/slog"
 	"github.com/gmbytes/snow/pkg/task"
 	"github.com/gmbytes/snow/pkg/xjson"
 	"github.com/valyala/fasthttp"
@@ -290,27 +291,51 @@ func (ss *Service) RpcReload(ctx IRpcContext) {
 }
 
 func (ss *Service) Tracef(format string, args ...any) {
-	ss.logger.Tracef(format, args...)
+	if ss.logger != nil {
+		ss.logger.Tracef(format, args...)
+		return
+	}
+	slog.Tracef("(%s) "+format, append([]any{ss.name}, args...)...)
 }
 
 func (ss *Service) Debugf(format string, args ...any) {
-	ss.logger.Debugf(format, args...)
+	if ss.logger != nil {
+		ss.logger.Debugf(format, args...)
+		return
+	}
+	slog.Debugf("(%s) "+format, append([]any{ss.name}, args...)...)
 }
 
 func (ss *Service) Infof(format string, args ...any) {
-	ss.logger.Infof(format, args...)
+	if ss.logger != nil {
+		ss.logger.Infof(format, args...)
+		return
+	}
+	slog.Infof("(%s) "+format, append([]any{ss.name}, args...)...)
 }
 
 func (ss *Service) Warnf(format string, args ...any) {
-	ss.logger.Warnf(format, args...)
+	if ss.logger != nil {
+		ss.logger.Warnf(format, args...)
+		return
+	}
+	slog.Warnf("(%s) "+format, append([]any{ss.name}, args...)...)
 }
 
 func (ss *Service) Errorf(format string, args ...any) {
-	ss.logger.Errorf(format, args...)
+	if ss.logger != nil {
+		ss.logger.Errorf(format, args...)
+		return
+	}
+	slog.Errorf("(%s) "+format, append([]any{ss.name}, args...)...)
 }
 
 func (ss *Service) Fatalf(format string, args ...any) {
-	ss.logger.Fatalf(format, args...)
+	if ss.logger != nil {
+		ss.logger.Fatalf(format, args...)
+		return
+	}
+	slog.Fatalf("(%s) "+format, append([]any{ss.name}, args...)...)
 }
 
 func (ss *Service) getService() *Service {
