@@ -24,41 +24,45 @@
 
 ```
 snow/
-├── core/                          # 核心模块
+├── pkg/                           # 公共 API 包
 │   ├── configuration/             # 配置系统
 │   │   └── sources/               # 配置源（JSON、YAML、File、Memory）
-│   ├── crontab/                   # Cron 表达式解析与调度
-│   ├── debug/                     # 调试工具（堆栈信息）
 │   ├── encrypt/dh/                # Diffie-Hellman 密钥交换
 │   ├── host/                      # 应用宿主与生命周期管理
-│   │   ├── builder/               # 默认 Host 构建器
-│   │   └── internal/              # Host 内部实现
+│   │   └── builder/               # 默认 Host 构建器
 │   ├── injection/                 # 依赖注入容器
-│   ├── kvs/                       # 全局键值存储
 │   ├── logging/                   # 日志系统
 │   │   ├── handler/               # 日志处理器
 │   │   │   ├── compound/          # 复合 Handler
 │   │   │   ├── console/           # 控制台 Handler
 │   │   │   └── file/              # 文件 Handler（滚动 + 压缩）
 │   │   └── slog/                  # 全局快捷日志
-│   ├── math/                      # 数学泛型工具
-│   ├── meta/                      # 元编程工具（NoCopy）
+│   ├── metrics/                   # 指标采集（内置 Prometheus 实现）
 │   ├── notifier/                  # 变更通知器
 │   ├── option/                    # 类型安全的选项注入
 │   ├── task/                      # goroutine 池任务执行
-│   ├── ticker/                    # 多 Worker 定时器池
 │   ├── version/                   # 语义化版本（SemVer）管理
-│   ├── metrics/                   # 指标采集（内置 Prometheus 实现）
+│   ├── xhttp/                     # HTTP 工具封装
 │   ├── xjson/                     # JSON 编解码封装（json-iterator）
 │   ├── xnet/                      # 网络接口（Server、Preprocessor）
+│   │   └── transport/             # 传输层实现
 │   └── xsync/                     # 同步工具（TimeoutWaitGroup）
+├── internal/                      # 内部实现包
+│   ├── crontab/                   # Cron 表达式解析与调度
+│   ├── debug/                     # 调试工具（堆栈信息）
+│   ├── host/                      # Host 内部实现
+│   ├── kvs/                       # 全局键值存储
+│   ├── meta/                      # 元编程工具（NoCopy）
+│   └── ticker/                    # 多 Worker 定时器池
 ├── routines/                      # 内置 Routine
 │   ├── ignore_input/              # 忽略标准输入（后台服务用）
 │   └── node/                      # 分布式节点（RPC、消息、服务）
-└── examples/                      # 示例
-    ├── minimal/                   # 最小示例
-    ├── pingpong/                  # Ping-Pong RPC 示例
-    └── discovery/                 # 服务发现示例
+├── examples/                      # 示例
+│   ├── minimal/                   # 最小示例
+│   ├── pingpong/                  # Ping-Pong RPC 示例
+│   └── discovery/                 # 服务发现示例
+└── test/                          # 测试
+    └── integration/               # 集成测试
 ```
 
 ## 快速开始
