@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+type Server = http.Server
+
 type Transport = http.Transport
 
 type HttpClient = http.Client
