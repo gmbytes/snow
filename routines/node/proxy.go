@@ -190,7 +190,10 @@ func (ss *serviceProxy) doCall(p *promise) {
 		}()
 	}
 
-	ss.sender.send(m)
+	if !ss.sender.send(m) {
+		callCancel()
+		releaseMessage(m)
+	}
 }
 
 func (ss *serviceProxy) callThen(mm *message, srv *Service, p *promise, sess int32) {

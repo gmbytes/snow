@@ -508,10 +508,13 @@ func (ss *Service) stop() {
 }
 
 func (ss *Service) closed() bool {
-	return atomic.LoadInt32(&ss.closedLock) == 2
+	return ss == nil || atomic.LoadInt32(&ss.closedLock) == 2
 }
 
 func (ss *Service) fork(tag string, f func()) bool {
+	if ss == nil {
+		return false
+	}
 	if ss.closed() {
 		ss.funcBufferLock.Lock()
 		defer ss.funcBufferLock.Unlock()
@@ -533,6 +536,9 @@ func (ss *Service) fork(tag string, f func()) bool {
 }
 
 func (ss *Service) send(msg *message) bool {
+	if ss == nil {
+		return false
+	}
 	if ss.closed() {
 		ss.msgBufferLock.Lock()
 		defer ss.msgBufferLock.Unlock()

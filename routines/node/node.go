@@ -847,7 +847,10 @@ func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySigChan chan
 	defer gNode.Unlock()
 
 	if nAddr == 0 {
-		return gNode.services[sAddr]
+		if s := gNode.services[sAddr]; s != nil {
+			return s
+		}
+		return nil
 	}
 
 	h := gNode.handle[nAddr]
