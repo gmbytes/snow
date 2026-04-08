@@ -1,10 +1,11 @@
 package node
 
 import (
-	assert "github.com/arl/assertgo"
-	"github.com/gmbytes/snow/internal/debug"
-	"github.com/gmbytes/snow/pkg/logging/slog"
 	"time"
+
+	assert "github.com/arl/assertgo"
+	"github.com/gmbytes/snow/pkg/debug"
+	"github.com/gmbytes/snow/pkg/logging/slog"
 )
 
 const maxTimeWheelDuration = 23*time.Hour + 59*time.Minute + 59*time.Second

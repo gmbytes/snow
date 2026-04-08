@@ -3,11 +3,12 @@ package ignore_input
 import (
 	"bufio"
 	"context"
-	"github.com/gmbytes/snow/pkg/host"
-	"github.com/gmbytes/snow/pkg/xsync"
 	"os"
 	"sync/atomic"
 	"time"
+
+	"github.com/gmbytes/snow/pkg/host"
+	"github.com/gmbytes/snow/pkg/xsync"
 )
 
 var _ host.IHostedRoutine = (*IgnoreInput)(nil)

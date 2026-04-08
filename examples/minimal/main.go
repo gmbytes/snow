@@ -7,8 +7,8 @@ import (
 	"github.com/gmbytes/snow/pkg/host"
 	"github.com/gmbytes/snow/pkg/host/builder"
 	"github.com/gmbytes/snow/pkg/logging/slog"
+	"github.com/gmbytes/snow/pkg/routines/ignore_input"
 	"github.com/gmbytes/snow/pkg/xsync"
-	"github.com/gmbytes/snow/routines/ignore_input"
 )
 
 var _ host.IHostedRoutine = (*clock)(nil)

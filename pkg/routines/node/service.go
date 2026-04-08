@@ -13,11 +13,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/gmbytes/snow/internal/debug"
-	"github.com/gmbytes/snow/internal/ticker"
+	"github.com/gmbytes/snow/pkg/debug"
 	"github.com/gmbytes/snow/pkg/logging"
 	"github.com/gmbytes/snow/pkg/logging/slog"
 	"github.com/gmbytes/snow/pkg/task"
+	"github.com/gmbytes/snow/pkg/ticker"
 	"github.com/gmbytes/snow/pkg/xjson"
 	"github.com/valyala/fasthttp"
 	otelTrace "go.opentelemetry.io/otel/trace"

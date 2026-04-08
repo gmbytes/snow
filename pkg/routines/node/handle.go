@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/gmbytes/snow/internal/ticker"
-	"github.com/gmbytes/snow/pkg/logging/slog"
-	"github.com/gmbytes/snow/pkg/task"
 	"io"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gmbytes/snow/pkg/logging/slog"
+	"github.com/gmbytes/snow/pkg/task"
+	"github.com/gmbytes/snow/pkg/ticker"
 )
 
 var _ iMessageSender = (*remoteHandle)(nil)

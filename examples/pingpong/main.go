@@ -5,8 +5,8 @@ import (
 
 	"github.com/gmbytes/snow/pkg/host"
 	"github.com/gmbytes/snow/pkg/host/builder"
-	"github.com/gmbytes/snow/routines/ignore_input"
-	"github.com/gmbytes/snow/routines/node"
+	"github.com/gmbytes/snow/pkg/routines/ignore_input"
+	"github.com/gmbytes/snow/pkg/routines/node"
 )
 
 func main() {
