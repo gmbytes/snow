@@ -2,11 +2,13 @@
 
 一个轻量级、模块化的 Go 分布式服务框架，专为游戏服务器等高并发场景设计。
 
+**环境要求**：Go 1.26+（见 `go.mod`）。
+
 ## 特性
 
 - **依赖注入**：基于接口的 IoC 容器，支持 Singleton / Scoped / Transient 三种生命周期
-- **配置管理**：多配置源（JSON / YAML / Memory / File），支持文件热更新
-- **分布式 RPC**：TCP 二进制协议 + HTTP JSON 协议，透明代理，自动路由
+- **配置管理**：多配置源（JSON / YAML / Memory / File / **环境变量**），支持文件热更新
+- **分布式 RPC**：TCP 二进制协议 + **WebSocket** + HTTP JSON 协议，透明代理，自动路由
 - **编解码可插拔**：TCP RPC 参数序列化通过 `ICodec` 接口抽象，默认 JSON，可替换为 MessagePack / Protobuf 等
 - **日志系统**：分层设计（Logger → Handler → Formatter），支持控制台彩色输出、文件滚动、zstd 压缩、**三种背压策略**（Drop / Block / DropLow）
 - **生命周期管理**：Routine 的完整生命周期（BeforeStart → Start → AfterStart → BeforeStop → Stop → AfterStop），所有阶段支持 `context.Context` 传播
@@ -16,6 +18,7 @@
 - **Context 全链路传播**：RPC 超时、取消、Trace 统一由 `context.Context` 驱动，Service 停止时自动取消所有进行中的 RPC
 - **统一错误模型**：结构化 `ErrorCode` + `Error` 包装，支持 `errors.Is/As`，线上日志可按错误码聚合
 - **内置可观测性**：默认 Prometheus 指标采集（QPS、P95/P99、错误率、在途请求数、重连次数），自动暴露 `/metrics` 端点
+- **可选 OpenTelemetry**：配置 `RegisterOption.Tracer`（如 `node.NodeTracer()`）后，本地 RPC 自动创建 Client/Server Span；未配置时无开销
 - **服务发现**：`IServiceDiscovery` 接口支持 etcd / Consul 等注册中心接入，与静态配置表双模式共存；内置 `/health` 端点供探活
 - **版本管理**：SemVer 语义化版本解析与比较，支持 prerelease / build 元数据
 - **自动服务注册**：泛型 `Register[T, U]()` 在 init() 中声明式注册，`RegisterService()` 一键挂载
@@ -26,7 +29,7 @@
 snow/
 ├── pkg/                           # 公共 API 包
 │   ├── configuration/             # 配置系统
-│   │   └── sources/               # 配置源（JSON、YAML、File、Memory）
+│   │   └── sources/               # 配置源（JSON、YAML、File、Memory、Env）
 │   ├── encrypt/dh/                # Diffie-Hellman 密钥交换
 │   ├── host/                      # 应用宿主与生命周期管理
 │   │   └── builder/               # 默认 Host 构建器
@@ -40,23 +43,23 @@ snow/
 │   ├── metrics/                   # 指标采集（内置 Prometheus 实现）
 │   ├── notifier/                  # 变更通知器
 │   ├── option/                    # 类型安全的选项注入
+│   ├── routines/                  # 内置 Routine
+│   │   ├── ignore_input/          # 忽略标准输入（后台服务用）
+│   │   └── node/                  # 分布式节点（RPC、消息、服务）
 │   ├── task/                      # goroutine 池任务执行
 │   ├── version/                   # 语义化版本（SemVer）管理
 │   ├── xhttp/                     # HTTP 工具封装
 │   ├── xjson/                     # JSON 编解码封装（json-iterator）
 │   ├── xnet/                      # 网络接口（Server、Preprocessor）
-│   │   └── transport/             # 传输层实现
+│   │   └── transport/             # 传输层（TCP / WebSocket 等）
 │   └── xsync/                     # 同步工具（TimeoutWaitGroup）
-├── internal/                      # 内部实现包
+├── internal/                      # 内部实现包（仅供本 module 内引用）
 │   ├── crontab/                   # Cron 表达式解析与调度
 │   ├── debug/                     # 调试工具（堆栈信息）
 │   ├── host/                      # Host 内部实现
 │   ├── kvs/                       # 全局键值存储
 │   ├── meta/                      # 元编程工具（NoCopy）
 │   └── ticker/                    # 多 Worker 定时器池
-├── routines/                      # 内置 Routine
-│   ├── ignore_input/              # 忽略标准输入（后台服务用）
-│   └── node/                      # 分布式节点（RPC、消息、服务）
 ├── examples/                      # 示例
 │   ├── minimal/                   # 最小示例
 │   ├── pingpong/                  # Ping-Pong RPC 示例
@@ -73,6 +76,8 @@ snow/
 go get github.com/gmbytes/snow
 ```
 
+本仓库内开发时可用 `make test`、`make lint`、`make build-examples` 等（见根目录 `Makefile`）。
+
 ### 最小示例
 
 ```go
@@ -82,10 +87,10 @@ import (
     "context"
     "time"
 
-    "github.com/gmbytes/snow/core/host"
-    "github.com/gmbytes/snow/core/host/builder"
-    "github.com/gmbytes/snow/core/logging/slog"
-    "github.com/gmbytes/snow/core/xsync"
+    "github.com/gmbytes/snow/pkg/host"
+    "github.com/gmbytes/snow/pkg/host/builder"
+    "github.com/gmbytes/snow/pkg/logging/slog"
+    "github.com/gmbytes/snow/pkg/xsync"
     "github.com/gmbytes/snow/routines/ignore_input"
 )
 
@@ -121,7 +126,7 @@ func main() {
     b := builder.NewDefaultBuilder()
     host.AddHostedRoutine[*ignore_input.IgnoreInput](b)
     host.AddHostedRoutine[*clock](b)
-    host.Run(b.Build())
+    host.Run(b.Build(), context.Background())
 }
 ```
 
@@ -129,6 +134,17 @@ func main() {
 
 ```go
 // main.go
+import (
+    "context"
+    "sync"
+    "time"
+
+    "github.com/gmbytes/snow/pkg/host"
+    "github.com/gmbytes/snow/pkg/host/builder"
+    "github.com/gmbytes/snow/pkg/routines/ignore_input"
+    "github.com/gmbytes/snow/pkg/routines/node"
+)
+
 func main() {
     b := builder.NewDefaultBuilder()
     host.AddHostedRoutine[*ignore_input.IgnoreInput](b)
@@ -154,7 +170,7 @@ func main() {
         }
     })
 
-    host.Run(b.Build())
+    host.Run(b.Build(), context.Background())
 }
 
 // pong.go - 服务端
@@ -226,17 +242,19 @@ func init() {
 启动时一键注册：
 
 ```go
+import "context"
+
 func main() {
     b := builder.NewDefaultBuilder()
     host.AddOption[*node.Option](b, "Node")
     node.RegisterService(b)  // 自动注册所有 init() 中 Register 的服务
-    host.Run(b.Build())
+    host.Run(b.Build(), context.Background())
 }
 ```
 
 ## 核心模块详解
 
-### 1. 依赖注入 (`core/injection`)
+### 1. 依赖注入 (`pkg/injection`)
 
 支持三种生命周期：
 
@@ -258,7 +276,7 @@ func (s *MyService) ConstructOption(opt option.Option[MyOption]) {
 }
 ```
 
-### 2. 配置系统 (`core/configuration`)
+### 2. 配置系统 (`pkg/configuration`)
 
 支持多种配置源，后注册的优先级更高：
 
@@ -274,6 +292,7 @@ b.ConfigurationManager().AddSource(
 | JSON     | JSON 文件（支持注释）           |
 | YAML     | YAML 文件                     |
 | File     | 文件监听基类，支持热更新（fsnotify） |
+| Env      | 环境变量（可配置前缀，默认 `APP_`，下划线映射为配置节层级） |
 
 配置绑定到结构体：
 
@@ -284,7 +303,7 @@ type ServerConfig struct {
 }
 ```
 
-### 3. 日志系统 (`core/logging`)
+### 3. 日志系统 (`pkg/logging`)
 
 分层架构：
 
@@ -306,7 +325,7 @@ Logger → RootHandler → CompoundHandler → ConsoleHandler (彩色输出)
   - `DropLow`：channel 满时仅保留 >= `DropMinLevel`（默认 WARN）的日志
 - 丢弃统计：按级别原子计数，每 30s 输出汇总到 stderr；暴露 `DroppedTotal()` / `DroppedSnapshot()` API 供外部上报
 
-### 4. 生命周期管理 (`core/host`)
+### 4. 生命周期管理 (`pkg/host`)
 
 所有生命周期方法接收 `context.Context` 和 `*xsync.TimeoutWaitGroup`：
 
@@ -332,12 +351,12 @@ type IHostedLifecycleRoutine interface {
 ```go
 b := builder.NewDefaultBuilder()
 host.AddHostedRoutine[*MyRoutine](b)
-host.Run(b.Build())  // 阻塞运行，Context 驱动停机
+host.Run(b.Build(), context.Background())  // 阻塞运行至收到停止信号
 ```
 
-`host.Run()` 内部通过 `context.WithCancel` 管理应用生命周期，停机时 Context 自动取消，所有 Routine 响应退出。
+`host.Run(h, startCtx)` 的 `startCtx` 用于**启动阶段**（各 Routine 的 `Start`）；收到停止请求后，使用 `RunWithStopContext` 可单独为 **Stop 阶段**指定超时上下文。详见 `pkg/host/host_application.go`。
 
-### 5. 分布式节点 (`routines/node`)
+### 5. 分布式节点 (`pkg/routines/node`)
 
 #### 消息协议
 
@@ -561,7 +580,7 @@ func (d *MapDiscovery) Deregister(nodeAddr node.INodeAddr, services []string) {
 ```
 
 ```go
-// main.go — 注入 ServiceDiscovery
+// main.go — 注入 ServiceDiscovery（需 import "context" 等，略）
 func main() {
     disc := NewMapDiscovery()
     disc.Register("Pong", "127.0.0.1", 8000)
@@ -592,7 +611,7 @@ func main() {
         }
     })
 
-    host.Run(b.Build())
+    host.Run(b.Build(), context.Background())
 }
 ```
 
@@ -613,7 +632,7 @@ func (ss *ping) Start(_ any) {
 
 生产环境只需将 `MapDiscovery` 替换为 etcd / Consul 实现即可，业务代码零变更。
 
-### 6. 时间轮 (`routines/node/timewheel`)
+### 6. 时间轮（`pkg/routines/node` 内建）
 
 三级时间轮（小时 / 分钟 / 秒），O(1) 插入和触发：
 
@@ -628,7 +647,7 @@ handle := s.CreateAfterItem(5*time.Second, func() { /* ... */ })
 handle.Stop()
 ```
 
-### 7. 版本管理 (`core/version`)
+### 7. 版本管理 (`pkg/version`)
 
 SemVer 语义化版本解析、比较与兼容性检查：
 
@@ -718,9 +737,11 @@ node.AddNode(b, func() *node.RegisterOption {
 
 用户可通过 `RegisterOption.MetricCollector` 传入自定义实现替换 Prometheus。
 
-完整 Prometheus 抓取配置与 Grafana 查询示例见 [snow_optimization.md - 3.4](snow_optimization.md)。
+#### OpenTelemetry（可选）
 
-### 12. JSON 工具 (`core/xjson`)
+在 `RegisterOption` 中设置 `Tracer`（例如 `node.NodeTracer()`，且已 `otel.SetTracerProvider(...)`）后，**本地 RPC** 会在调用侧创建 Client Span、在服务侧创建 Server Span（Span 名分别为 `rpc.call/<func>` 与 `rpc/<service>/<func>`）。未设置 `Tracer` 时零开销。跨节点 Trace 上下文传播与导出器集成可按业务继续扩展。
+
+### 12. JSON 工具 (`pkg/xjson`)
 
 基于 `json-iterator/go` 的高性能 JSON 封装，框架内部统一使用：
 
@@ -731,9 +752,11 @@ str, err := xjson.MarshalToString(obj)
 err := xjson.UnmarshalFromString(str, &obj)
 ```
 
-### 13. Crontab (`core/crontab`)
+### 13. Crontab（`internal/crontab`，内部包）
 
-支持标准 Cron 表达式和宏：
+Cron 解析与调度实现位于 `internal/crontab`，**仅能被本 module（`github.com/gmbytes/snow/...`）内的包导入**；业务项目请使用第三方 Cron 库或自行封装。
+
+框架内用法示例：
 
 ```go
 expr, _ := crontab.Parse("*/5 * * * *")        // 每 5 分钟
@@ -785,12 +808,15 @@ Node:
 |---------------------------------|--------------------|
 | panjf2000/ants/v2              | Goroutine 池        |
 | valyala/fasthttp               | 高性能 HTTP 服务器    |
+| gorilla/websocket              | WebSocket 传输       |
 | prometheus/client_golang       | Prometheus 指标采集   |
 | fsnotify/fsnotify              | 文件系统事件监听      |
 | json-iterator/go               | 高性能 JSON 编解码    |
+| vmihailenco/msgpack/v5         | MessagePack（可替换 `ICodec`） |
 | klauspost/compress             | zstd 压缩            |
 | gopkg.in/yaml.v3               | YAML 解析            |
 | go-strip-json-comments         | JSON 注释移除         |
+| go.opentelemetry.io/otel/*     | 可选分布式追踪（`RegisterOption.Tracer`） |
 | arl/assertgo                   | 断言工具             |
 | stretchr/testify               | 测试框架             |
 
@@ -802,7 +828,7 @@ Node:
 
 ## 优化建议与进展
 
-> 完整设计文档与实施细节见 [snow_optimization.md](snow_optimization.md)
+以下为框架演进状态汇总（设计讨论见团队内部文档或 Issue）。
 
 ### 已实现
 
@@ -816,15 +842,16 @@ Node:
 | 6 | 编解码可插拔（ICodec） | **已实现** | TCP RPC 序列化接口化，默认 JSON，可替换 |
 | 7 | 日志写入背压 | **已实现** | 三种背压策略 + 丢弃计数 + 周期告警 |
 | 8 | 服务发现与动态路由 | **已实现** | `IServiceDiscovery` 接口 + 静态表双模式 + `/health` 探活 + 停机自动注销 |
+| 9 | OpenTelemetry 本地 RPC Span | **已实现** | `RegisterOption.Tracer`、`node.NodeTracer()`，本地调用链 Client/Server Span（未配置 Tracer 时零开销） |
 
 ### 待推进
 
 | # | 主题 | 优先级 | 说明 |
 |---|------|--------|------|
-| 9 | 高频对象池化 | P1 | `message`/`rpcContext`/`promise`/`[]byte` 等 `sync.Pool` 池化 |
-| 10 | 反射热点优化 | P1 | `reflect.Value.Call` 构建 dispatch 缓存，降低 CPU 开销 |
-| 11 | 链路追踪（OpenTelemetry） | P2 | `trace_id` 跨节点传播 + Span 上报 |
-| 12 | 连接管理增强 | P2 | 指数退避重连、连接池、心跳超时检测 |
-| 13 | 配置验证 | P2 | 配置项类型/范围校验，启动期必填校验 |
-| 14 | RPC 文档生成 | P2 | 自动扫描生成 API 文档、HTTP RPC OpenAPI |
-| 15 | 测试支持 | P2 | Mock 工具 + 集成测试框架 + 单元测试环境 |
+| 10 | 高频对象池化 | P1 | `message`/`rpcContext`/`promise`/`[]byte` 等 `sync.Pool` 池化 |
+| 11 | 反射热点优化 | P1 | `reflect.Value.Call` 构建 dispatch 缓存，降低 CPU 开销 |
+| 12 | OTel 跨节点与导出整合 | P2 | `trace_id` 跨节点传播、Exporter/采样策略、与指标/日志关联 |
+| 13 | 连接管理增强 | P2 | 指数退避重连、连接池、心跳超时检测 |
+| 14 | 配置验证 | P2 | 配置项类型/范围校验，启动期必填校验 |
+| 15 | RPC 文档生成 | P2 | 自动扫描生成 API 文档、HTTP RPC OpenAPI |
+| 16 | 测试支持 | P2 | Mock 工具 + 集成测试框架 + 单元测试环境 |
