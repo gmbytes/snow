@@ -83,11 +83,11 @@ func (ss *serviceProxy) doCall(p *promise) {
 	m.writeRequest(p.fName, p.args)
 
 	if ss.sender == nil || ss.sender.closed() {
-		var ch chan<- bool
+		var retrySignal func()
 		if ss.nAddrUpdater != nil {
-			ch = ss.nAddrUpdater.getSigChan()
+			retrySignal = ss.nAddrUpdater.signalRefresh
 		}
-		ss.sender = nodeGetMessageSender(ss.GetNodeAddr().(Addr), ss.sAddr, true, ch)
+		ss.sender = nodeGetMessageSender(ss.GetNodeAddr().(Addr), ss.sAddr, true, retrySignal)
 	}
 	if ss.sender == nil {
 		if p.errCb != nil {

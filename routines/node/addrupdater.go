@@ -1,55 +1,134 @@
 package node
 
 import (
-	"github.com/mogud/snow/core/task"
+	"context"
+	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/mogud/snow/core/task"
 )
 
+const addrResolveTimeout = 5 * time.Second
+
+type AddrResolver func(context.Context) (Addr, error)
+
 type AddrUpdater struct {
-	nAddr   int64
-	updateF func(chan<- Addr)
-	running int32
-	sigChan chan bool
+	addr           atomic.Int64
+	resolver       AddrResolver
+	resolveTimeout time.Duration
+	signal         chan struct{}
+	done           chan struct{}
+
+	started atomic.Bool
+	stopped atomic.Bool
+
+	stateMu  sync.Mutex
+	cancel   context.CancelFunc
+	doneOnce sync.Once
 }
 
-func NewNodeAddrUpdater(nAddr Addr, updateFunc func(chan<- Addr)) *AddrUpdater {
-	return &AddrUpdater{
-		nAddr:   int64(nAddr),
-		updateF: updateFunc,
-		sigChan: make(chan bool, 1024),
+func NewNodeAddrUpdater(initial Addr, resolver AddrResolver) *AddrUpdater {
+	u := &AddrUpdater{
+		resolver:       resolver,
+		resolveTimeout: addrResolveTimeout,
+		signal:         make(chan struct{}, 1),
+		done:           make(chan struct{}),
 	}
+	u.addr.Store(int64(initial))
+	return u
 }
 
-func (ss *AddrUpdater) Start() {
+func (ss *AddrUpdater) Start(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !ss.started.CompareAndSwap(false, true) {
+		return
+	}
+	if ss.stopped.Load() {
+		ss.closeDone()
+		return
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	ss.stateMu.Lock()
+	if ss.stopped.Load() {
+		ss.stateMu.Unlock()
+		cancel()
+		ss.closeDone()
+		return
+	}
+	ss.cancel = cancel
+	ss.stateMu.Unlock()
+
 	task.Execute(func() {
+		defer ss.closeDone()
+		defer ss.stopped.Store(true)
 		for {
 			select {
-			case <-ss.sigChan:
-				ss.retryUpdateAddr()
+			case <-runCtx.Done():
+				return
+			case <-ss.signal:
+				ss.resolve(runCtx)
 			}
 		}
 	})
 }
 
 func (ss *AddrUpdater) GetNodeAddr() Addr {
-	return Addr(atomic.LoadInt64(&ss.nAddr))
+	return Addr(ss.addr.Load())
 }
 
-func (ss *AddrUpdater) getSigChan() chan<- bool {
-	return ss.sigChan
+func (ss *AddrUpdater) Stop() {
+	if ss.stopped.CompareAndSwap(false, true) {
+		ss.stateMu.Lock()
+		cancel := ss.cancel
+		ss.stateMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		if !ss.started.Load() {
+			ss.closeDone()
+		}
+	}
+	<-ss.done
 }
 
-func (ss *AddrUpdater) retryUpdateAddr() {
-	if !atomic.CompareAndSwapInt32(&ss.running, 0, 1) {
+func (ss *AddrUpdater) signalRefresh() {
+	if ss.stopped.Load() {
+		return
+	}
+	select {
+	case ss.signal <- struct{}{}:
+	default:
+	}
+}
+
+func (ss *AddrUpdater) resolve(ctx context.Context) {
+	if ss.resolver == nil {
+		if ctx.Err() == nil && !ss.stopped.Load() {
+			ss.addr.Store(int64(AddrInvalid))
+		}
 		return
 	}
 
-	addrChan := make(chan Addr, 1)
-	ss.updateF(addrChan)
+	resolveCtx, cancel := context.WithTimeout(ctx, ss.resolveTimeout)
+	addr, err := ss.resolver(resolveCtx)
+	resolveErr := resolveCtx.Err()
+	cancel()
 
-	task.Execute(func() {
-		newAddr := <-addrChan
-		atomic.StoreInt64(&ss.nAddr, int64(newAddr))
-		atomic.StoreInt32(&ss.running, 0)
+	if ctx.Err() != nil || ss.stopped.Load() {
+		return
+	}
+	if err != nil || resolveErr != nil {
+		addr = AddrInvalid
+	}
+	ss.addr.Store(int64(addr))
+}
+
+func (ss *AddrUpdater) closeDone() {
+	ss.doneOnce.Do(func() {
+		close(ss.done)
 	})
 }

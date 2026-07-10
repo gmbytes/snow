@@ -550,9 +550,12 @@ func nodeDelRemoteHandle(nAddr Addr) {
 	delete(gNode.handle, nAddr)
 }
 
-func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySigChan chan<- bool) iMessageSender {
-	if nAddr == AddrInvalid && retry && retrySigChan != nil {
-		retrySigChan <- true
+func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySignal func()) iMessageSender {
+	if nAddr == AddrInvalid {
+		if retry && retrySignal != nil {
+			retrySignal()
+		}
+		return nil
 	}
 
 	gNode.Lock()
@@ -580,8 +583,8 @@ func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySigChan chan
 		if err != nil {
 			slog.Warnf("node get remote handle failed: %+v", err)
 			h.safeDelete()
-			if retrySigChan != nil {
-				retrySigChan <- true
+			if retrySignal != nil {
+				retrySignal()
 			}
 			return
 		}
@@ -592,6 +595,9 @@ func nodeGetMessageSender(nAddr Addr, sAddr int32, retry bool, retrySigChan chan
 			slog.Warnf("send identity to server(%v) failed: %v", nAddr, err)
 			h.safeDelete()
 			_ = conn.Close()
+			if retrySignal != nil {
+				retrySignal()
+			}
 			return
 		}
 
